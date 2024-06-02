@@ -1,0 +1,3294 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <title>Dashboard</title>
+  <link href="https://fonts.googleapis.com/css2?family=Poppins&display=swap" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/gh/jehoiakim1010/Data_Link@main/jquery-3.6.0.js"></script>
+  <script src="https://cdn.jsdelivr.net/gh/jehoiakim1010/Data_Link@main/amchart.js"></script>
+  <script src="https://cdn.jsdelivr.net/gh/jehoiakim1010/Data_Link@main/serial.js"></script>
+  <script src="https://www.amcharts.com/lib/4/core.js"></script>
+  <script src="https://www.amcharts.com/lib/4/maps.js"></script>
+  <script src="https://www.amcharts.com/lib/4/geodata/worldHigh.js"></script>
+  <script src="https://www.amcharts.com/lib/4/themes/animated.js"></script>
+  <script>
+    $(document).ready(function () {
+      var LB = 1,  //Left Bottom
+        LT = 2,  //Left Top
+        RT = 3,  //Right Top
+        RB = 4,  //Right Bottom
+        HR = 1, 	//Horizontal		
+        VR = 2,    //Vertical
+        WordObjType = 'span',
+        DIV = 'div',
+        Word_Default_font_Family = 'Impact',
+        distance_Counter = 1,
+        word_counter = 1;
+
+      function Util() { }
+      //To Generate Random Colors For Words
+      Util.getRandomColor = function () {
+        var letters = '0123456789ABCDEF'.split('');
+        var color = '#';
+        for (var i = 0; i < 6; i++) {
+          color += letters[Math.round(Math.random() * 15)];
+        }
+        return color;
+      };
+
+      function space(spaceType, width, height, x, y) {
+        this.spaceType = spaceType;
+        this.width = width;
+        this.height = height;
+        this.x = x;
+        this.y = y;
+      }
+
+      function Word(wordConfig) {
+        this.word = wordConfig.word;
+        this.weight = wordConfig.weight;
+
+        this.fontFactor = wordConfig.fontFactor;
+        this.fontOffset = wordConfig.fontOffset;
+        this.minWeight = wordConfig.minWeight;
+        this.padding_left = wordConfig.padding_left;
+
+        this.font_family = wordConfig.font_family;
+        this.font = null;
+        this.color = wordConfig.color;
+        this.span = null;
+        this.width = null;
+        this.height = null;
+        this.word_class = wordConfig.word_class;
+
+        this._init();
+      }
+      Word.prototype = {
+        _init: function () {
+          this._setFont();
+          this._setSpan_Size();
+        },
+        _setFont: function () {
+          this.font = Math.floor(((this.weight - this.minWeight) * this.fontFactor) + this.fontOffset);
+        },
+        _setSpan_Size: function () {
+          var span = document.createElement(WordObjType);
+          span.setAttribute('id', "Word_" + (word_counter++) + "_" + this.weight);
+          document.body.appendChild(span);
+          $(span).css({
+            position: 'absolute',
+            display: 'block',
+            left: -999990,
+            top: 0
+          });
+          $(span).css("font-size", this.font + "px");
+
+          if (this.font_family != null && this.font_family != '')
+            $(span).css("font-family", this.font_family);
+          else
+            $(span).css("font-family", Word_Default_font_Family);
+
+
+          if (this.word_class != null && this.word_class != '')
+            $(span).addClass(this.word_class);
+
+          if (this.color != null && this.color != '')
+            $(span).css("color", this.color);
+          else
+            $(span).css("color", Util.getRandomColor());
+
+          $(span).css("-webkit-user-select", "none").css("-moz-user-select", "none").css("-ms-user-select", "none");
+          $(span).css("user-select", "none").css("-o-user-select", "none");
+          $(span).css("line-height", this.font + "px");
+          if (this.padding_left == null)
+            this.padding_left = 0;
+
+          $(span).css("padding-left", this.padding_left + "px");
+          $(span).html(this.word);
+
+          this.width = $(span).outerWidth() + (this.padding_left * 2);
+          this.height = $(span).outerHeight();
+
+          $(span).remove();
+          this.span = span;
+        }
+      };
+
+
+      function WordCloud() {
+        this.defaultOptions = {
+          title: 'JQ WOrd Cloud',
+          words: [],
+          minFont: 10,
+          maxFont: 50,
+          fontOffset: 0,
+          showSpaceDIV: false,
+          verticalEnabled: true,
+          cloud_color: null,
+          cloud_font_family: null,
+          spaceDIVColor: 'white',
+          padding_left: null,
+          word_common_classes: null,
+          word_click: function () { },
+          word_mouseOver: function () { },
+          word_mouseEnter: function () { },
+          word_mouseOut: function () { },
+          beforeCloudRender: function () { },
+          afterCloudRender: function () { }
+        };
+        this.minWeight = null;
+        this.maxWeight = null;
+
+        this.spaceDataObject = null;
+        this.spaceIdArray = null;
+        this.words = null;
+        this.fontFactor = 1,
+
+          this.methods = {
+            destroy: this._destroy
+          };
+
+      };
+
+      WordCloud.prototype = {
+        _init: function (options) {
+
+          //Calling Methods from this.Methods{}
+          if (options != null && typeof options === 'string')
+            if (this.methods[options] != null)
+              return this.methods[options].apply();
+            else
+              return null;
+
+          if (options == null)
+            this.options = this.defaultOptions;
+          else if (options != null && typeof options === 'object')
+            this.options = $.extend(this.defaultOptions, options);
+
+          this.spaceDataObject = {};
+          this.spaceIdArray = [];
+
+          this.words = this.options.words;
+          //Sorting Words according weight descending order
+          this.words.sort(function (a, b) { if (a.weight < b.weight) { return 1; } else if (a.weight > b.weight) { return -1; } else { return 0; } });
+
+          this.options.beforeCloudRender();
+          this._start();
+          this.options.afterCloudRender();
+          this._final();
+        },
+        _setFontFactor: function () {
+          this.maxWeight = this.words[0].weight;
+          this.minWeight = this.words[this.words.length - 1].weight;
+          this.fontFactor = (this.options.maxFont - this.options.minFont) / (this.maxWeight - this.minWeight);
+        },
+        _start: function () {
+          this._destroy();
+          this._setFontFactor();
+          this._draw();
+        },
+        _final: function () {
+        },
+        _destroy: function () {
+          this.$target.html('');
+        },
+        _setTarget: function ($target) {
+          this.$target = $target;
+          $target.css("position", "relative");
+          this.tWidth = $target.innerWidth();
+          this.xOffset = this.tWidth / 2;
+
+          this.tHeight = $target.innerHeight();
+          this.yOffset = this.tHeight / 2;
+        },
+        _draw: function () {
+
+          for (var index = 0; index < this.words.length; index++) {
+            var currWord = this.words[index];
+            var wordConfigObj = {};
+            wordConfigObj['word'] = currWord.word;
+            wordConfigObj['weight'] = currWord.weight;
+
+            if (this.options.cloud_color != null)
+              wordConfigObj['color'] = this.options.cloud_color;
+            else
+              wordConfigObj['color'] = currWord.color;
+
+            if (this.options.padding_left != null)
+              wordConfigObj['padding_left'] = this.options.padding_left;
+
+            wordConfigObj['word_class'] = currWord.word_class;
+
+            if (this.options.cloud_font_family != null)
+              wordConfigObj['font_family'] = this.options.cloud_font_family;
+            else
+              wordConfigObj['font_family'] = currWord.font_family;
+
+            wordConfigObj['fontFactor'] = this.fontFactor;
+            wordConfigObj['fontOffset'] = (this.options.fontOffset + this.options.minFont);
+            wordConfigObj['minWeight'] = this.minWeight;
+
+
+            var wordObj = new Word(wordConfigObj);
+
+            if (this.options.word_common_classes != null)
+              $(wordObj.span).addClass(this.options.word_common_classes);
+
+            $(wordObj.span).on("click", this.options.word_click);
+            $(wordObj.span).on("mouseover", this.options.word_mouseOver);
+            $(wordObj.span).on("mouseout", this.options.word_mouseOut);
+            $(wordObj.span).on("mouseenter", this.options.word_mouseEnter);
+
+            if (index == 0)
+              this._placeFirstWord(wordObj);
+            else
+              this._placeOtherWord(wordObj);
+          }
+        },
+
+        _updateSpaceIdArray: function (distanceS, distance) {
+          if (this.spaceIdArray.length != 0) {
+            for (var index = 0; index < this.spaceIdArray.length; index++) {
+              if (distance < parseFloat(this.spaceIdArray[index].split("_")[0])) {
+                this.spaceIdArray.splice(index, 0, distanceS);
+                return;
+              }
+            }
+            this.spaceIdArray.push(distanceS);
+          }
+          else
+            this.spaceIdArray.push(distanceS);
+
+        },
+        _showSpaceDiv: function (type, w, h, x, y) {
+          var xMul = 1;
+          var yMul = 1;
+
+          switch (type) {
+            case LB:
+              xMul = 0;
+              yMul = -1;
+              break;
+            case LT:
+              xMul = 0;
+              yMul = 0;
+              break;
+            case RT:
+              xMul = -1;
+              yMul = 0;
+              break;
+            case RB:
+              xMul = -1;
+              yMul = -1;
+              break;
+          }
+
+          var div = document.createElement(DIV);
+          $(div).css("left", x + xMul * w).css("top", y + yMul * h).css("width", w).css("height", h).css("border", "1px " + this.options.spaceDIVColor + " solid").css("position", "absolute").css("display", "block");
+          this.$target.append(div);
+        },
+        _pushSpaceData: function (type, w, h, x, y) {
+          //Calculating Distance between (x,y): Key point of Space and and Center of Container (this.xOffset,this.yOffset) 
+          var distance = Math.sqrt((this.xOffset - x) * (this.xOffset - x) + (this.yOffset - y) * (this.yOffset - y));
+          var distanceS = distance + '_' + (distance_Counter++);
+
+          //Update Space Id Array
+          this._updateSpaceIdArray(distanceS, distance);
+          //Add Space into Space Data Object
+          this.spaceDataObject[distanceS] = new space(type, w, h, x, y);
+
+          // To Show The Space
+          if (this.options.showSpaceDIV) {
+            this._showSpaceDiv(type, w, h, x, y);
+
+          }
+
+        },
+        _placeFirstWord: function (word) {
+
+          var w = word.width;
+          var h = word.height;
+          var xoff = this.xOffset - w / 2;
+          var yoff = this.yOffset - h / 2;
+          var tw = this.tWidth;
+          var th = this.tHeight;
+
+          var span = word.span;
+          $(span).css("left", xoff).css("top", yoff).css("display", "inline");
+          this.$target.append(span);
+
+          this._pushSpaceData(LB, tw - xoff - w, h, xoff + w, yoff + h / 2);   //M1
+          this._pushSpaceData(LT, w, th - yoff - h, xoff + w / 2, yoff + h); //M2				
+          this._pushSpaceData(RT, xoff, h, xoff, yoff + h / 2); //M3				
+          this._pushSpaceData(RB, w, yoff, xoff + w / 2, yoff);  //M4
+
+          this._pushSpaceData(LT, w / 2, h / 2, xoff + w, yoff + h / 2);   //C1
+          this._pushSpaceData(RT, w / 2, h / 2, xoff + w / 2, yoff + h); //C2				
+          this._pushSpaceData(RB, w / 2, h / 2, xoff, yoff + h / 2); //C3				
+          this._pushSpaceData(LB, w / 2, h / 2, xoff + w / 2, yoff);  //C4
+
+          this._pushSpaceData(LT, tw - xoff - w - w / 2, th - yoff - h / 2, xoff + w + w / 2, yoff + h / 2);   //S1
+          this._pushSpaceData(RT, xoff + w / 2, th - yoff - h - h / 2, xoff + w / 2, yoff + h + h / 2); //S2				
+          this._pushSpaceData(RB, xoff - w / 2, yoff + h / 2, xoff - w / 2, yoff + h / 2); //S3				
+          this._pushSpaceData(LB, xoff + w / 2, yoff - h / 2, xoff + w / 2, yoff - h / 2);  //S4
+
+
+
+
+        },
+
+        _placeOtherWord: function (word) {
+
+          for (var index = 0; index < this.spaceIdArray.length; index++) {
+            var spaceId = this.spaceIdArray[index];
+            var obj = this.spaceDataObject[spaceId];
+
+            var alignmentInd = 0;
+            var alignmentIndCount = 0;
+
+
+            if (word.width <= obj.width && word.height <= obj.height) {
+              alignmentInd = HR;
+              alignmentIndCount++;
+            }
+
+            if (this.options.verticalEnabled) {
+              if (word.height <= obj.width && word.width <= obj.height) {
+                alignmentInd = VR;
+                alignmentIndCount++;
+              }
+            }
+            if (alignmentIndCount > 0) {
+
+              this.spaceDataObject[spaceId] = null;
+              this.spaceIdArray.splice(index, 1);
+
+
+              //For Word's Span Position
+              var xMul = 1;
+              var yMul = 1;
+
+              //For new Child Spaces
+              var xMulS = 1;
+              var yMulS = 1;
+
+              switch (obj.spaceType) {
+                case LB:
+                  xMul = 0;
+                  yMul = -1;
+                  xMulS = 1;
+                  yMulS = -1;
+                  break;
+                case LT:
+                  xMul = 0;
+                  yMul = 0;
+                  xMulS = 1;
+                  yMulS = 1;
+                  break;
+                case RT:
+                  xMul = -1;
+                  yMul = 0;
+                  xMulS = -1;
+                  yMulS = 1;
+                  break;
+                case RB:
+                  xMul = -1;
+                  yMul = -1;
+                  xMulS = -1;
+                  yMulS = -1;
+                  break;
+              }
+
+              if (alignmentIndCount > 1) {
+
+                //Making Horizontal Word in Larger Number
+                // Random number[0,5] is >0 and <3 --> HR
+                // Random number[0,5] is >3 --> VR
+
+                if (Math.random() * 5 > 3)
+                  alignmentInd = VR;
+                else
+                  alignmentInd = HR;
+              }
+
+              var w = word.width;
+              var h = word.height;
+
+              switch (alignmentInd) {
+                case HR:
+                  var span = word.span;
+                  $(span).css("left", obj.x + xMul * w).css("top", obj.y + yMul * h).css("display", "inline");
+                  this.$target.append(span);
+
+                  if (Math.random() * 2 > 1) {
+
+                    /*
+                     * 			_________________________________
+                     *			|								|
+                     *			|				T				|
+                     *			|								|
+                     *			|_______________________________|
+                     *			|				|				|								
+                     *			|	  WORD		|		R		|
+                     *			|	********	|				|
+                     *			|_______________|_______________|
+                     * 
+                     */
+
+                    this._pushSpaceData(obj.spaceType, obj.width - w, h, obj.x + xMulS * w, obj.y);  //R
+                    this._pushSpaceData(obj.spaceType, obj.width, obj.height - h, obj.x, obj.y + yMulS * h);  //T
+
+                  } else {
+
+                    /*
+                     * 			_________________________________
+                     *			|				|				|
+                     *			|		T		|				|
+                     *			|				|				|
+                     *			|_______________|		R		|
+                     *			|				|				|								
+                     *			|	  WORD		|				|
+                     *			|	********	|				|
+                     *			|_______________|_______________|
+                     * 
+                     */
+
+                    this._pushSpaceData(obj.spaceType, obj.width - w, obj.height, obj.x + xMulS * w, obj.y);  //R
+                    this._pushSpaceData(obj.spaceType, w, obj.height - h, obj.x, obj.y + yMulS * h); 		//T
+                  }
+                  break;
+
+                case VR:
+                  var span = word.span;
+                  //IE Handling for Differenet way of Rotation Transforms 
+                  if (jQuery.browser && jQuery.browser.msie) {
+                    $(span).css("left", obj.x + xMul * h).css("top", obj.y + yMul * w);
+                  } else {
+                    $(span).css("left", obj.x + xMul * h - (w - h) / 2).css("top", obj.y + yMul * w + (w - h) / 2);
+                  }
+
+                  $(span).css("display", "block").css("-webkit-transform", "rotate(270deg)").css("-moz-transform", "rotate(270deg)");
+                  $(span).css("-o-transform", "rotate(270deg)").css("filter", "progid:DXImageTransform.Microsoft.BasicImage(rotation=3)");
+                  this.$target.append(span);
+
+                  if (Math.random() * 2 > 1) {
+
+                    /*
+                     * 			_________________________________
+                     *			|								|
+                     *			|				T				|
+                     *			|								|
+                     *			|_______________________________|
+                     *			|		D		|				|								
+                     *			|		R		|		R		|
+                     *			|		O		|				|
+                     *			|_______W_______|_______________|
+                     * 
+                     */
+
+                    this._pushSpaceData(obj.spaceType, obj.width - h, w, obj.x + xMulS * h, obj.y);  //R
+                    this._pushSpaceData(obj.spaceType, obj.width, obj.height - w, obj.x, obj.y + yMulS * w);  //T
+                  } else {
+
+                    /*
+                     * 			_________________________________
+                     *			|				|				|
+                     *			|		T		|				|
+                     *			|				|				|
+                     *			|_______________|		R		|
+                     *			|		D		|				|								
+                     *			|	  	R		|				|
+                     *			|		O		|				|
+                     *			|_______W_______|_______________|
+                     * 
+                     */
+
+                    this._pushSpaceData(obj.spaceType, obj.width - h, obj.height, obj.x + xMulS * h, obj.y);  //R
+                    this._pushSpaceData(obj.spaceType, h, obj.height - w, obj.x, obj.y + yMulS * w); 		//T
+                  }
+                  break;
+
+              }
+
+              return;
+            }
+          }
+
+        }
+
+      };
+
+      (function ($) {
+        $.fn.jQWCloud = function (options) {
+          var wc = new WordCloud();
+          wc._setTarget($(this));
+          wc._init(options);
+        };
+      })(jQuery);
+
+      const html = document.documentElement;
+      const body = document.body;
+      const menuLinks = document.querySelectorAll(".admin-menu a");
+      const collapseBtn = document.querySelector(".admin-menu .collapse-btn");
+      const toggleMobileMenu = document.querySelector(".toggle-mob-menu");
+      const switchInput = document.querySelector(".switch input");
+      const switchLabel = document.querySelector(".switch label");
+      const switchLabelText = switchLabel.querySelector("span:last-child");
+      const collapsedClass = "collapsed";
+      const lightModeClass = "light-mode";
+
+      /*TOGGLE HEADER STATE*/
+      collapseBtn.addEventListener("click", function () {
+        body.classList.toggle(collapsedClass);
+        this.getAttribute("aria-expanded") == "true"
+          ? this.setAttribute("aria-expanded", "false")
+          : this.setAttribute("aria-expanded", "true");
+        this.getAttribute("aria-label") == "collapse menu"
+          ? this.setAttribute("aria-label", "expand menu")
+          : this.setAttribute("aria-label", "collapse menu");
+      });
+
+      /*TOGGLE MOBILE MENU*/
+      toggleMobileMenu.addEventListener("click", function () {
+        body.classList.toggle("mob-menu-opened");
+        this.getAttribute("aria-expanded") == "true"
+          ? this.setAttribute("aria-expanded", "false")
+          : this.setAttribute("aria-expanded", "true");
+        this.getAttribute("aria-label") == "open menu"
+          ? this.setAttribute("aria-label", "close menu")
+          : this.setAttribute("aria-label", "open menu");
+      });
+
+      /*SHOW TOOLTIP ON MENU LINK HOVER*/
+      for (const link of menuLinks) {
+        link.addEventListener("mouseenter", function () {
+          if (
+            body.classList.contains(collapsedClass) &&
+            window.matchMedia("(min-width: 768px)").matches
+          ) {
+            const tooltip = this.querySelector("span").textContent;
+            this.setAttribute("title", tooltip);
+          } else {
+            this.removeAttribute("title");
+          }
+        });
+      }
+
+      /*TOGGLE LIGHT/DARK MODE*/
+      if (localStorage.getItem("dark-mode") === "false") {
+        html.classList.add(lightModeClass);
+        switchInput.checked = false;
+        switchLabelText.textContent = "Light";
+      }
+
+      switchInput.addEventListener("input", function () {
+        html.classList.toggle(lightModeClass);
+        if (html.classList.contains(lightModeClass)) {
+          switchLabelText.textContent = "Light";
+          localStorage.setItem("dark-mode", "false");
+        } else {
+          switchLabelText.textContent = "Dark";
+          localStorage.setItem("dark-mode", "true");
+        }
+      });
+
+      $('#dashboard').on('click', function (event) {
+        event.preventDefault();
+        $('#main-container-dashboard').addClass('active');
+        $('#main-container-social').removeClass('active');
+        $('#main-container-charts').removeClass('active');
+        $('#main-container-trends').removeClass('active');
+        $('#main-container-mentions').removeClass('active');
+        $('#main-container-comments').removeClass('active');
+        $('#main-container-reports').removeClass('active');
+      });
+
+      $('#chart').on('click', function (event) {
+        event.preventDefault();
+        $('#main-container-social').removeClass('active');
+        $('#main-container-dashboard').removeClass('active');
+        $('#main-container-charts').addClass('active');
+        $('#main-container-trends').removeClass('active');
+        $('#main-container-mentions').removeClass('active');
+        $('#main-container-comments').removeClass('active');
+        $('#main-container-reports').removeClass('active');
+      });
+
+      $('#social').on('click', function (event) {
+        event.preventDefault();
+        $('#main-container-social').addClass('active');
+        $('#main-container-dashboard').removeClass('active');
+        $('#main-container-charts').removeClass('active');
+        $('#main-container-trends').removeClass('active');
+        $('#main-container-mentions').removeClass('active');
+        $('#main-container-comments').removeClass('active');
+        $('#main-container-reports').removeClass('active');
+      });
+
+      $('#trend').on('click', function (event) {
+        event.preventDefault();
+        $('#main-container-social').removeClass('active');
+        $('#main-container-dashboard').removeClass('active');
+        $('#main-container-charts').removeClass('active');
+        $('#main-container-trends').addClass('active');
+        $('#main-container-mentions').removeClass('active');
+        $('#main-container-comments').removeClass('active');
+        $('#main-container-reports').removeClass('active');
+      });
+
+      $('#mention').on('click', function (event) {
+        event.preventDefault();
+        $('#main-container-social').removeClass('active');
+        $('#main-container-dashboard').removeClass('active');
+        $('#main-container-charts').removeClass('active');
+        $('#main-container-trends').removeClass('active');
+        $('#main-container-mentions').addClass('active');
+        $('#main-container-comments').removeClass('active');
+        $('#main-container-reports').removeClass('active');
+      });
+
+      $('#comment').on('click', function (event) {
+        event.preventDefault();
+        $('#main-container-social').removeClass('active');
+        $('#main-container-dashboard').removeClass('active');
+        $('#main-container-charts').removeClass('active');
+        $('#main-container-trends').removeClass('active');
+        $('#main-container-mentions').removeClass('active');
+        $('#main-container-comments').addClass('active');
+        $('#main-container-reports').removeClass('active');
+      });
+
+      $('#report').on('click', function (event) {
+        event.preventDefault();
+        $('#main-container-social').removeClass('active');
+        $('#main-container-dashboard').removeClass('active');
+        $('#main-container-charts').removeClass('active');
+        $('#main-container-trends').removeClass('active');
+        $('#main-container-mentions').removeClass('active');
+        $('#main-container-comments').removeClass('active');
+        $('#main-container-reports').addClass('active');
+      });
+      // Set default active container
+      $('#main-container-dashboard').addClass('active');
+
+      //FETCH RSS DATE
+      var dateCounts = {}; //Dates
+      var colors = [
+        "cornflowerblue",
+        "olivedrab",
+        "orange",
+        "tomato",
+        "crimson",
+        "purple",
+        "turquoise",
+        "forestgreen",
+        "navy",
+        "gray",
+        "teal",
+        "darkorchid",
+        "mediumspringgreen",
+        "lightcoral",
+        "steelblue",
+        "rosybrown",
+        "indigo",
+        "cadetblue",
+        "sienna",
+        "goldenrod",
+        "maroon",
+        "darkslategray",
+        "lime",
+        "mediumvioletred",
+        "slateblue",
+        "peru",
+        "royalblue",
+        "olive",
+        "darkgoldenrod",
+        "slategray",
+        "saddlebrown",
+        "darkorange",
+        "mediumseagreen",
+        "orchid",
+        "mediumaquamarine",
+        "darkgreen",
+        "mediumslateblue",
+        "darkmagenta",
+        "dodgerblue",
+        "firebrick",
+        "mediumblue",
+        "indianred",
+        "navajowhite",
+        "mediumorchid",
+        "darkred",
+        "seagreen",
+        "darkcyan",
+        "lightseagreen",
+        "chocolate",
+        "mediumturquoise",
+        "crimson",
+        "darkviolet",
+        "darkolivegreen",
+        "deepskyblue",
+        "mediumspringgreen",
+        "orangered",
+        "purple",
+        "salmon",
+        "slateblue",
+        "tomato",
+        "darkslateblue",
+        "darksalmon",
+        "deepskyblue",
+        "limegreen",
+        "lightcoral",
+        "mediumblue",
+        "mediumvioletred",
+        "midnightblue",
+        "magenta",
+        "green",
+        "greenyellow",
+        "hotpink",
+        "lightgreen",
+        "lightpink",
+        "lightsalmon",
+        "mediumslateblue",
+        "navy",
+        "palegreen",
+        "orangered",
+        "powderblue",
+        "saddlebrown",
+        "seagreen",
+        "royalblue",
+        "springgreen",
+        "thistle",
+        "violet",
+        "yellowgreen",
+        "darkolivegreen",
+        "deeppink",
+        "deepskyblue",
+        "darkslategray",
+        "darkseagreen",
+        "darkorchid",
+        "darkmagenta",
+        "darkgreen",
+        "darkcyan",
+        "darkblue",
+        "darkgoldenrod",
+        "darkgray",
+        "darkred",
+        "darkorange",
+        "darkkhaki",
+        "darkviolet",
+        "darksalmon",
+        "darkturquoise",
+        "dodgerblue",
+        "lightseagreen",
+        "lightgreen",
+        "lightcoral",
+        "lightpink",
+        "lightsalmon",
+        "lightsteelblue",
+        "limegreen",
+        "mediumaquamarine",
+        "mediumblue",
+        "mediumorchid",
+        "mediumpurple",
+        "mediumseagreen",
+        "mediumslateblue",
+        "mediumspringgreen",
+        "mediumturquoise",
+        "mediumvioletred",
+        "midnightblue",
+        "mistyrose",
+        "moccasin",
+        "navajowhite",
+        "navy",
+        "oldlace",
+        "olive",
+        "olivedrab",
+        "orange",
+        "orangered",
+        "orchid",
+        "palegoldenrod",
+        "palegreen",
+        "paleturquoise",
+        "palevioletred",
+        "papayawhip",
+        "peachpuff",
+        "peru",
+        "pink",
+        "plum",
+        "powderblue",
+        "purple",
+        "red",
+        "rosybrown",
+        "royalblue",
+        "saddlebrown",
+        "salmon",
+        "sandybrown",
+        "seagreen",
+        "seashell",
+        "sienna",
+        "silver",
+        "skyblue",
+        "slateblue",
+        "slategray",
+        "snow",
+        "springgreen",
+        "steelblue",
+        "tan",
+        "teal",
+        "thistle",
+        "tomato",
+        "turquoise",
+        "violet",
+        "wheat",
+        "white",
+        "whitesmoke",
+        "yellow",
+        "yellowgreen"
+      ];
+
+      fetch(`https://api.allorigins.win/get?url=${encodeURIComponent('https://app.peakmetrics.com/alert/listenph1/79259/rss')}`)
+        .then(response => {
+          if (response.ok) return response.json(); // Parse the JSON response
+          throw new Error('Network response was not ok.');
+        })
+        .then(data => {
+          // Parse the contents as XML
+          var parser = new DOMParser();
+          var xmlDoc = parser.parseFromString(data.contents, 'application/xml');
+          var items = xmlDoc.querySelectorAll('item');
+          var parsedPubDates = [];
+
+          items.forEach(item => {
+            var pubDate = new Date(item.querySelector('pubDate').textContent);
+            var dateKey = pubDate.toDateString(); // Use date as key
+            var pubDateStr = new Date(pubDate);
+            parsedPubDates.push({ original: pubDate, parsed: pubDateStr });
+
+            // Count occurrences of each date
+            if (dateCounts[dateKey]) {
+              dateCounts[dateKey]++;
+            } else {
+              dateCounts[dateKey] = 1;
+            }
+            var randomColorIndex = Math.floor(Math.random() * colors.length);
+
+            // Initialize the data array for the chart
+            var chartData = [];
+
+            // Iterate over each date entry in dateCounts object
+            Object.keys(dateCounts).forEach(dateKey => {
+              // Generate a random color for each date entry
+              var randomColor = '#' + Math.floor(Math.random() * 16777215).toString(16);
+
+              // Create a data object for the current date entry
+              var dataObject = {
+                "Date": dateKey,
+                "Date Count": dateCounts[dateKey],
+                "color": randomColor
+              };
+
+              // Push the data object to the chartData array
+              chartData.push(dataObject);
+            });
+            // Sort the chartData array by Date Count in descending order and take the top 5
+            chartData.sort((a, b) => b["Date Count"] - a["Date Count"]);
+            chartData = chartData.slice(0, 5);
+
+
+            // Create the chart with the modified data
+            var chart = AmCharts.makeChart("chartdiv", {
+              "type": "serial",
+              "startDuration": 2,
+              "dataProvider": chartData, // Use the modified chartData array
+              "valueAxes": [{
+                "position": "left",
+                "axisAlpha": 0,
+                "gridAlpha": 0
+              }],
+              "graphs": [{
+                "balloonText": "[[category]]: <b>[[value]]</b>",
+                "colorField": "color",
+                "fillAlphas": 0.85,
+                "lineAlpha": 0.1,
+                "type": "column",
+                "topRadius": 1,
+                "valueField": "Date Count"
+              }],
+              "depth3D": 40,
+              "angle": 30,
+              "chartCursor": {
+                "categoryBalloonEnabled": false,
+                "cursorAlpha": 0,
+                "zoomable": false
+              },
+              "categoryField": "Date",
+              "categoryAxis": {
+                "gridPosition": "start",
+                "axisAlpha": 0,
+                "gridAlpha": 0
+              },
+              "exportConfig": {
+                "menuTop": "20px",
+                "menuRight": "20px",
+                "menuItems": [{
+                  "icon": '/lib/3/images/export.png',
+                  "format": 'png'
+                }]
+              }
+            }, 0);
+          });
+        }).catch(error => console.error('Error fetching RSS feed:', error));
+
+
+      // Sentiments
+      var sentiments_keyword_positive = [
+        "good", "better", "nice", "excellent", "awesome",
+        "fantastic", "wonderful", "superb", "great", "amazing",
+        "brilliant", "terrific", "splendid", "fabulous", "outstanding",
+        "phenomenal", "perfect", "incredible", "marvelous", "impressive",
+        "delightful", "exceptional", "lovely", "beautiful", "cool",
+        "joyful", "happy", "uplifting", "glorious", "graceful",
+        "charming", "sensational", "stunning", "remarkable", "majestic",
+        "elegant", "radiant", "breathtaking", "exquisite", "vibrant",
+        "refreshing", "captivating", "blissful", "divine", "ecstatic",
+        "thrilling", "ravishing", "enchanting", "resplendent", "serene",
+        "exhilarating", "miraculous", "sunshine", "paradise", "heavenly",
+        "glowing", "delicious", "grateful", "empowering", "fab",
+        "pristine", "harmonious", "awesome", "magic", "celestial",
+        "heartwarming", "gentle", "luminous", "exultant", "jubilant",
+        "radiant", "cheerful", "bright", "sparkling", "festive",
+        "gleaming", "sunny", "glistening", "effervescent", "exuberant",
+        "golden", "beaming", "lively", "magnificent", "idyllic",
+        "energizing", "bliss", "tranquil", "utopia", "paradise",
+        "buoyant", "charismatic", "buoyant", "colorful", "glamorous"
+      ];
+      var sentiments_keyword_count_positive = {};
+
+      var sentiments_keyword_negative = [
+        "bad", "worse", "terrible", "horrible", "awful",
+        "poor", "unpleasant", "disappointing", "unfavorable", "inferior",
+        "disgusting", "offensive", "ugly", "abysmal", "dreadful",
+        "lousy", "distasteful", "repulsive", "disheartening", "unacceptable",
+        "depressing", "discouraging", "grim", "unfortunate", "miserable",
+        "gloomy", "dire", "dreary", "bleak", "sad",
+        "tragic", "melancholy", "grief", "sorrow", "despair",
+        "anguish", "heartbreaking", "disastrous", "ruinous", "devastating",
+        "catastrophic", "horrifying", "nightmarish", "frightening", "terrifying",
+        "scary", "menacing", "threatening", "dangerous", "harmful", "mary grace"
+      ];
+      var sentiments_keyword_count_negative = {};
+
+      var sentiments_keyword_Uncertainty = [
+        "uncertain", "ambiguous", "doubtful", "indecisive", "insecure",
+        "unsettled", "vague", "undecided", "unpredictable", "confused",
+        "conflicted", "hesitant", "wary", "ambiguous", "equivocal",
+        "unresolved", "unstable", "precarious", "tentative", "shaky",
+        "unsteady", "iffy", "hazy", "murky", "cloudy",
+        "fuzzy", "nebulous", "opaque", "mysterious", "obscure",
+        "perplexing", "puzzling", "bewildering", "mixed", "variable",
+        "volatile", "capricious", "chancy", "unreliable", "unclear",
+        "questionable", "dubious", "skeptical", "suspicious", "anxious"
+        , "mary grace"
+      ];
+      var sentiments_keyword_count_Uncertainty = {};
+
+      var sentiments_keyword_Litigious = [
+        "litigious", "lawsuit", "legal action", "court", "litigation",
+        "dispute", "lawsuit", "claim", "legal battle", "litigate",
+        "lawsuit", "legal case", "legal dispute", "lawsuit", "lawsuit",
+        "litigious", "lawsuit", "legal claim", "legal proceeding", "litigation",
+        "lawsuit", "lawsuit", "lawsuit", "litigious", "legal matter",
+        "lawsuit", "legal process", "litigate", "lawsuit", "legal fight",
+        "court case", "litigious", "lawsuit", "legal issue", "litigation",
+        "lawsuit", "lawsuit", "lawsuit", "litigious", "legal matter",
+        "lawsuit", "legal dispute", "litigate", "lawsuit", "legal action",
+        "court battle", "litigious", "lawsuit", "legal challenge", "litigation"
+      ];
+      var sentiments_keyword_count_Litigious = {};
+      //FETCH GOOGLE DATA
+      fetch(`https://api.allorigins.win/get?url=${encodeURIComponent('https://app.peakmetrics.com/alert/listenph1/79259/rss')}`)
+        .then(response => {
+          if (response.ok) return response.json(); // Parse the JSON response
+          throw new Error('Network response was not ok.');
+        })
+        .then(data => {
+          // Parse the contents as XML
+          var parser = new DOMParser();
+          var xmlDoc = parser.parseFromString(data.contents, 'application/xml');
+          var items = xmlDoc.querySelectorAll('item');
+
+          items.forEach(item => {
+            var title = item.querySelector('title').textContent.toLowerCase().replace(/(<([^>]+)>)/ig, '');
+            var description = item.querySelector('description').textContent.toLowerCase().replace(/(<([^>]+)>)/ig, '');
+
+            // Check if any of the keywords are present in the title or description
+            sentiments_keyword_positive.forEach(keyword => {
+              if (title.includes(keyword) || description.includes(keyword)) {
+                if (sentiments_keyword_count_positive[keyword]) {
+                  sentiments_keyword_count_positive[keyword]++;
+                } else {
+                  sentiments_keyword_count_positive[keyword] = 1;
+                }
+              }
+            });
+
+            // Check if any of the keywords are present in the title or description
+            sentiments_keyword_negative.forEach(keyword => {
+              if (title.includes(keyword) || description.includes(keyword)) {
+                if (sentiments_keyword_count_negative[keyword]) {
+                  sentiments_keyword_count_negative[keyword]++;
+
+
+                } else {
+                  sentiments_keyword_count_negative[keyword] = 1;
+                }
+              }
+            });
+
+            // Check if any of the keywords are present in the title or description
+            sentiments_keyword_Uncertainty.forEach(keyword => {
+              if (title.includes(keyword) || description.includes(keyword)) {
+                if (sentiments_keyword_count_Uncertainty[keyword]) {
+                  sentiments_keyword_count_Uncertainty[keyword]++;
+
+
+                } else {
+                  sentiments_keyword_count_Uncertainty[keyword] = 1;
+                }
+              }
+            });
+
+            // Check if any of the keywords are present in the title or description
+            sentiments_keyword_Litigious.forEach(keyword => {
+              if (title.includes(keyword) || description.includes(keyword)) {
+                if (sentiments_keyword_count_Litigious[keyword]) {
+                  sentiments_keyword_count_Litigious[keyword]++;
+
+
+                } else {
+                  sentiments_keyword_count_Litigious[keyword] = 1;
+                }
+              }
+            });
+          });
+
+          // Create <li> elements based on the sentiments count
+          var chartContainer_positive = document.querySelector('.chart--horiz_positive');
+          for (var keyword in sentiments_keyword_count_positive) {
+            var count = sentiments_keyword_count_positive[keyword];
+            var li = document.createElement('li');
+            li.className = 'chart__bar';
+            var percentage = (sentiments_keyword_count_positive[keyword]);
+            li.style.width = percentage + '%';
+            li.setAttribute('data-percentage', percentage.toFixed(2));
+
+            var span = document.createElement('span');
+            span.className = 'chart__label';
+            span.textContent = keyword; // Display count in label
+
+            li.appendChild(span);
+            chartContainer_positive.appendChild(li);
+          }
+
+          var chartContainer_negative = document.querySelector('.chart--horiz_negative');
+          for (var keyword in sentiments_keyword_count_negative) {
+            var count = sentiments_keyword_count_negative[keyword];
+            var li = document.createElement('li');
+            li.className = 'chart__bar';
+            var percentage = (sentiments_keyword_count_negative[keyword]);
+            li.style.width = percentage + '%';
+            li.setAttribute('data-percentage', percentage.toFixed(2));
+
+            var span = document.createElement('span');
+            span.className = 'chart__label';
+            span.textContent = keyword; // Display count in label
+
+            li.appendChild(span);
+            chartContainer_negative.appendChild(li);
+          }
+
+          var chartContainer_Uncertainty = document.querySelector('.chart--horiz_uncertainty');
+          for (var keyword in sentiments_keyword_count_Uncertainty) {
+            var count = sentiments_keyword_count_Uncertainty[keyword];
+            var li = document.createElement('li');
+            li.className = 'chart__bar';
+            var percentage = (sentiments_keyword_count_Uncertainty[keyword]);
+            li.style.width = percentage + '%';
+            li.setAttribute('data-percentage', percentage.toFixed(2));
+
+            var span = document.createElement('span');
+            span.className = 'chart__label';
+            span.textContent = keyword; // Display count in label
+
+            li.appendChild(span);
+            chartContainer_Uncertainty.appendChild(li);
+          }
+
+          var chartContainer_Litigious = document.querySelector('.chart--horiz_litigious');
+          for (var keyword in sentiments_keyword_count_Litigious) {
+            var count = sentiments_keyword_count_Litigious[keyword];
+            var li = document.createElement('li');
+            li.className = 'chart__bar';
+            var percentage = (sentiments_keyword_count_Litigious[keyword]);
+            li.style.width = percentage + '%';
+            li.setAttribute('data-percentage', percentage.toFixed(2));
+
+            var span = document.createElement('span');
+            span.className = 'chart__label';
+            span.textContent = keyword; // Display count in label
+
+            li.appendChild(span);
+            chartContainer_Litigious.appendChild(li);
+          }
+        });
+      function isBadComment(description) {
+        // Convert the description to lowercase for case-in-sensitive matching
+        const lowerDescription = description.toLowerCase();
+
+        // Check if the description contains any bad keywords
+        for (const keyword of sentiments_keyword_negative) {
+          if (lowerDescription.includes(keyword)) {
+            return "<img src='https://images.emojiterra.com/google/noto-emoji/unicode-15/animated/203c.gif' alt='Badword' width='20' height='20' />";// Description contains a bad keyword
+          }
+        }
+
+        return "<img src='https://images.emojiterra.com/google/noto-emoji/unicode-15/animated/2705.gif' alt='NoBadword' width='20' height='20' />"; // Description does not contain any bad keywords
+      }
+
+
+      //Slice Size
+      function sliceSize(dataNum, dataTotal) {
+        return (dataNum / dataTotal) * 360;
+      }
+      //Add Slice
+      function addSlice(sliceSize, pieElement, offset, sliceID, color) {
+        $(pieElement).append("<div class='slice " + sliceID + "'><span></span></div>");
+        var offset = offset - 1;
+        var sizeRotation = -179 + sliceSize;
+        $("." + sliceID).css({
+          "transform": "rotate(" + offset + "deg) translate3d(0,0,0)"
+        });
+        $("." + sliceID + " span").css({
+          "transform": "rotate(" + sizeRotation + "deg) translate3d(0,0,0)",
+          "background-color": color
+        });
+      }
+
+      function iterateSlices(sliceSize, pieElement, offset, dataCount, sliceCount, color) {
+        var sliceID = "s" + dataCount + "-" + sliceCount;
+        var maxSize = 179;
+        if (sliceSize <= maxSize) {
+          addSlice(sliceSize, pieElement, offset, sliceID, color);
+        } else {
+          addSlice(maxSize, pieElement, offset, sliceID, color);
+          iterateSlices(sliceSize - maxSize, pieElement, offset + maxSize, dataCount, sliceCount + 1, color);
+        }
+      }
+
+      function createPie(dataElement, pieElement, legendData, color) {
+        var listData = legendData.map(item => item.value);
+        var listTotal = listData.reduce((total, num) => total + num, 0);
+        var offset = 0;
+        for (var i = 0; i < listData.length; i++) {
+          var size = sliceSize(listData[i], listTotal);
+          iterateSlices(size, pieElement, offset, i, 0, color[i]);
+          offset += size;
+        }
+
+        // Set border color of each <li> element in the legend
+        $(dataElement + " li").each(function (index) {
+          $(this).css("border-color", color[index]);
+        });
+      }
+
+      function extractDomain(url) {
+        let domain;
+        // Find & remove protocol (http, https, ftp) and get domain
+        if (url.indexOf("://") > -1) {
+          domain = url.split('/')[2];
+        } else {
+          domain = url.split('/')[0];
+        }
+        // Find & remove www
+        if (domain.indexOf("www.") > -1) {
+          domain = domain.split('www.')[1];
+        }
+        // Remove any path or parameters after the domain
+        domain = domain.split(/[/?#]/)[0];
+        // Append .com if the domain does not have any extension
+        if (!domain.includes(".")) {
+          try {
+            const parsedUrl = new URL(url);
+            domain = parsedUrl.hostname.replace(/^www\./, ''); // Remove 'www.' if present
+          } catch (error) {
+            console.error("Error parsing URL:", error);
+            domain += ".com";
+          }
+        }
+        return domain;
+      }
+
+      // Mapping of country names to abbreviations
+      var countryAbbreviations = {
+        "afghanistan": "AF",
+        "albania": "AL",
+        "algeria": "DZ",
+        "andorra": "AD",
+        "angola": "AO",
+        "antigua and barbuda": "AG",
+        "argentina": "AR",
+        "armenia": "AM",
+        "australia": "AU",
+        "austria": "AT",
+        "azerbaijan": "AZ",
+        "bahamas": "BS",
+        "bahrain": "BH",
+        "bangladesh": "BD",
+        "barbados": "BB",
+        "belarus": "BY",
+        "belgium": "BE",
+        "belize": "BZ",
+        "benin": "BJ",
+        "bhutan": "BT",
+        "bolivia": "BO",
+        "bosnia and herzegovina": "BA",
+        "botswana": "BW",
+        "brazil": "BR",
+        "brunei": "BN",
+        "bulgaria": "BG",
+        "burkina faso": "BF",
+        "burundi": "BI",
+        "cabo verde": "CV",
+        "cambodia": "KH",
+        "cameroon": "CM",
+        "canada": "CA",
+        "central african republic": "CF",
+        "chad": "TD",
+        "chile": "CL",
+        "china": "CN",
+        "colombia": "CO",
+        "comoros": "KM",
+        "congo (democratic republic of the)": "CD",
+        "congo (republic of the)": "CG",
+        "costa rica": "CR",
+        "croatia": "HR",
+        "cuba": "CU",
+        "cyprus": "CY",
+        "czech republic": "CZ",
+        "denmark": "DK",
+        "djibouti": "DJ",
+        "dominica": "DM",
+        "dominican republic": "DO",
+        "ecuador": "EC",
+        "egypt": "EG",
+        "el salvador": "SV",
+        "equatorial guinea": "GQ",
+        "eritrea": "ER",
+        "estonia": "EE",
+        "ethiopia": "ET",
+        "fiji": "FJ",
+        "finland": "FI",
+        "france": "FR",
+        "gabon": "GA",
+        "gambia": "GM",
+        "georgia": "GE",
+        "germany": "DE",
+        "ghana": "GH",
+        "greece": "GR",
+        "grenada": "GD",
+        "guatemala": "GT",
+        "guinea": "GN",
+        "guinea-bissau": "GW",
+        "guyana": "GY",
+        "haiti": "HT",
+        "honduras": "HN",
+        "hungary": "HU",
+        "iceland": "IS",
+        "india": "IN",
+        "indonesia": "ID",
+        "iran": "IR",
+        "iraq": "IQ",
+        "ireland": "IE",
+        "israel": "IL",
+        "italy": "IT",
+        "jamaica": "JM",
+        "japan": "JP",
+        "jordan": "JO",
+        "kazakhstan": "KZ",
+        "kenya": "KE",
+        "kiribati": "KI",
+        "kosovo": "XK",
+        "kuwait": "KW",
+        "kyrgyzstan": "KG",
+        "laos": "LA",
+        "latvia": "LV",
+        "lebanon": "LB",
+        "lesotho": "LS",
+        "liberia": "LR",
+        "libya": "LY",
+        "liechtenstein": "LI",
+        "lithuania": "LT",
+        "luxembourg": "LU",
+        "macedonia (north macedonia)": "MK",
+        "madagascar": "MG",
+        "malawi": "MW",
+        "malaysia": "MY",
+        "maldives": "MV",
+        "mali": "ML",
+        "malta": "MT",
+        "marshall islands": "MH",
+        "mauritania": "MR",
+        "mauritius": "MU",
+        "mexico": "MX",
+        "micronesia": "FM",
+        "moldova": "MD",
+        "monaco": "MC",
+        "mongolia": "MN",
+        "montenegro": "ME",
+        "morocco": "MA",
+        "mozambique": "MZ",
+        "myanmar (burma)": "MM",
+        "namibia": "NA",
+        "nauru": "NR",
+        "nepal": "NP",
+        "netherlands": "NL",
+        "new zealand": "NZ",
+        "nicaragua": "NI",
+        "niger": "NE",
+        "nigeria": "NG",
+        "north korea": "KP",
+        "norway": "NO",
+        "oman": "OM",
+        "pakistan": "PK",
+        "palau": "PW",
+        "palestine": "PS",
+        "panama": "PA",
+        "papua new guinea": "PG",
+        "paraguay": "PY",
+        "peru": "PE",
+        "philippines": "PH",
+        "poland": "PL",
+        "portugal": "PT",
+        "qatar": "QA",
+        "romania": "RO",
+        "russia": "RU",
+        "rwanda": "RW",
+        "saint kitts and nevis": "KN",
+        "saint lucia": "LC",
+        "saint vincent and the grenadines": "VC",
+        "samoa": "WS",
+        "san marino": "SM",
+        "sao tome and principe": "ST",
+        "saudi arabia": "SA",
+        "senegal": "SN",
+        "serbia": "RS",
+        "seychelles": "SC",
+        "sierra leone": "SL",
+        "singapore": "SG",
+        "slovakia": "SK",
+        "slovenia": "SI",
+        "solomon islands": "SB",
+        "somalia": "SO",
+        "south africa": "ZA",
+        "south korea": "KR",
+        "south sudan": "SS",
+        "spain": "ES",
+        "sri lanka": "LK",
+        "sudan": "SD",
+        "suriname": "SR",
+        "swaziland": "SZ",
+        "sweden": "SE",
+        "switzerland": "CH",
+        "syria": "SY",
+        "taiwan": "TW",
+        "tanzania": "TZ",
+        "thailand": "TH",
+        "timor-leste": "TL",
+        "togo": "TG",
+        "tonga": "TO",
+        "trinidad and tobago": "TT",
+        "tunisia": "TN",
+        "turkey": "TR",
+        "turkmenistan": "TM",
+        "tuvalu": "TV",
+        "uganda": "UG",
+        "ukraine": "UA",
+        "united arab emirates": "AE",
+        "united kingdom": "GB",
+        "united states": "US",
+        "uruguay": "UY",
+        "uzbekistan": "UZ",
+        "vanuatu": "VU",
+        "vatican city": "VA",
+        "venezuela": "VE",
+        "vietnam": "VN",
+        "yemen": "YE",
+        "zambia": "ZM",
+        "zimbabwe": "ZW",
+        "tajikistan": "TJ"
+      };
+      var Country = [
+        "afghanistan",
+        "albania",
+        "algeria",
+        "andorra",
+        "angola",
+        "antigua and barbuda",
+        "argentina",
+        "armenia",
+        "australia",
+        "austria",
+        "azerbaijan",
+        "bahamas",
+        "bahrain",
+        "bangladesh",
+        "barbados",
+        "belarus",
+        "belgium",
+        "belize",
+        "benin",
+        "bhutan",
+        "bolivia",
+        "bosnia and herzegovina",
+        "botswana",
+        "brazil",
+        "brunei",
+        "bulgaria",
+        "burkina faso",
+        "burundi",
+        "cabo verde",
+        "cambodia",
+        "cameroon",
+        "canada",
+        "central african republic",
+        "chad",
+        "chile",
+        "china",
+        "colombia",
+        "comoros",
+        "congo (democratic republic of the)",
+        "congo (republic of the)",
+        "costa rica",
+        "croatia",
+        "cuba",
+        "cyprus",
+        "czech republic",
+        "denmark",
+        "djibouti",
+        "dominica",
+        "dominican republic",
+        "ecuador",
+        "egypt",
+        "el salvador",
+        "equatorial guinea",
+        "eritrea",
+        "estonia",
+        "ethiopia",
+        "fiji",
+        "finland",
+        "france",
+        "gabon",
+        "gambia",
+        "georgia",
+        "germany",
+        "ghana",
+        "greece",
+        "grenada",
+        "guatemala",
+        "guinea",
+        "guinea-bissau",
+        "guyana",
+        "haiti",
+        "honduras",
+        "hungary",
+        "iceland",
+        "india",
+        "indonesia",
+        "iran",
+        "iraq",
+        "ireland",
+        "israel",
+        "italy",
+        "jamaica",
+        "japan",
+        "jordan",
+        "kazakhstan",
+        "kenya",
+        "kiribati",
+        "kosovo",
+        "kuwait",
+        "kyrgyzstan",
+        "laos",
+        "latvia",
+        "lebanon",
+        "lesotho",
+        "liberia",
+        "libya",
+        "liechtenstein",
+        "lithuania",
+        "luxembourg",
+        "macedonia (north macedonia)",
+        "madagascar",
+        "malawi",
+        "malaysia",
+        "maldives",
+        "mali",
+        "malta",
+        "marshall islands",
+        "mauritania",
+        "mauritius",
+        "mexico",
+        "micronesia",
+        "moldova",
+        "monaco",
+        "mongolia",
+        "montenegro",
+        "morocco",
+        "mozambique",
+        "myanmar (burma)",
+        "namibia",
+        "nauru",
+        "nepal",
+        "netherlands",
+        "new zealand",
+        "nicaragua",
+        "niger",
+        "nigeria",
+        "north korea",
+        "norway",
+        "oman",
+        "pakistan",
+        "palau",
+        "palestine",
+        "panama",
+        "papua new guinea",
+        "paraguay",
+        "peru",
+        "philippines",
+        "poland",
+        "portugal",
+        "qatar",
+        "romania",
+        "russia",
+        "rwanda",
+        "saint kitts and nevis",
+        "saint lucia",
+        "saint vincent and the grenadines",
+        "samoa",
+        "san marino",
+        "sao tome and principe",
+        "saudi arabia",
+        "senegal",
+        "serbia",
+        "seychelles",
+        "sierra leone",
+        "singapore",
+        "slovakia",
+        "slovenia",
+        "solomon islands",
+        "somalia",
+        "south africa",
+        "south korea",
+        "south sudan",
+        "spain",
+        "sri lanka",
+        "sudan",
+        "suriname",
+        "swaziland",
+        "sweden",
+        "switzerland",
+        "syria",
+        "taiwan",
+        "tajikistan",
+        "tanzania",
+        "thailand",
+        "timor-leste",
+        "togo",
+        "tonga",
+        "trinidad and tobago",
+        "tunisia",
+        "turkey",
+        "turkmenistan",
+        "tuvalu",
+        "uganda",
+        "ukraine",
+        "united arab emirates",
+        "united kingdom",
+        "united states",
+        "uruguay",
+        "uzbekistan",
+        "vanuatu",
+        "vatican city",
+        "venezuela",
+        "vietnam",
+        "yemen",
+        "zambia",
+        "zimbabwe"
+      ];
+      keywords1 = [];
+      var db_Country = [];
+      var Country_Count = {};
+      var db_keyword = [];
+      var keywordCounts1 = {};
+
+      fetch(`https://api.allorigins.win/get?url=${encodeURIComponent('https://app.peakmetrics.com/alert/listenph1/79259/rss')}`)
+        .then(response => {
+          if (response.ok) return response.json();
+          throw new Error('Network response was not ok.');
+        })
+        .then(data => {
+          // Parse the RSS feed data
+          var parser = new DOMParser();
+          var xmlDoc = parser.parseFromString(data.contents, "text/xml");
+
+          var items = xmlDoc.querySelectorAll('item');
+
+          items.forEach(item => {
+            var title = item.querySelector('title').textContent.toLowerCase().replace(/(<([^>]+)>)/ig, '');
+            var description = item.querySelector('description').textContent.toLowerCase().replace(/(<([^>]+)>)/ig, '');
+
+            // Extract words from title and description
+            var words = title.split(/\s+/).concat(description.split(/\s+/));
+
+            // Update keywords1 and keywordCounts1
+            words.forEach(word => {
+              if (word) { // Check if the word is not empty
+                if (!keywords1.includes(word)) {
+                  keywords1.push(word);
+                }
+                if (keywordCounts1[word]) {
+                  keywordCounts1[word]++;
+                } else {
+                  keywordCounts1[word] = 1;
+                }
+              }
+            });
+
+            // Check if any of the keywords are present in the title or description
+            Country.forEach(keyword => {
+              if (title.includes(keyword) || description.includes(keyword)) {
+                if (Country_Count[keyword]) {
+                  Country_Count[keyword]++;
+
+                } else {
+                  Country_Count[keyword] = 1;
+                }
+              }
+            });
+          });
+
+          // Populate db array from keywordCounts1
+          for (var keyword in keywordCounts1) {
+            db_keyword.push({ "word": keyword, "weight": keywordCounts1[keyword] });
+          }
+
+          // Populate db array from keywordCounts1
+          for (var keyword in Country_Count) {
+            // Get the abbreviation for the country
+            var abbreviation = countryAbbreviations[keyword];
+            // Push the data to db_Country array
+            db_Country.push({ "title": keyword, "id": abbreviation, "customData": Country_Count[keyword] });
+          }
+
+          console.log(db_Country);
+
+          $("#wordCloud").jQWCloud({
+            words: db_keyword,
+            minFont: 10,
+            maxFont: 50,
+            //fontOffset: 5,
+            //cloud_font_family: 'Owned',
+            //verticalEnabled: false,
+            padding_left: 1,
+            //showSpaceDIV: true,
+            //spaceDIVColor: 'white',
+            word_common_classes: 'WordClass',
+            word_mouseEnter: function () {
+              var word = $(this).text();
+              var weight = db_keyword.find(item => item.word === word).weight;
+              $(this).css("text-decoration", "underline");
+              $(this).attr('title', `Number Of Count: ${weight}`);
+            },
+            word_mouseOut: function () {
+              $(this).css("text-decoration", "none");
+            },
+            word_click: function () {
+              alert("You have selected:" + $(this).text());
+            },
+            beforeCloudRender: function () {
+              date1 = new Date();
+            }
+            /*
+            afterCloudRender: function () {
+                var date2 = new Date();
+                console.log("Cloud Completed in " + (date2.getTime() - date1.getTime()) + " milliseconds");
+            }
+            */
+          });
+
+
+
+          // Themes begin
+          am4core.useTheme(am4themes_animated);
+          // Themes end
+
+          // Create map instance
+          var chart = am4core.create("chartdiv1", am4maps.MapChart);
+
+          // Set map definition
+          chart.geodata = am4geodata_worldHigh;
+
+          // Set projection
+          chart.projection = new am4maps.projections.Mercator();
+
+          // Export
+          chart.exporting.menu = new am4core.ExportMenu();
+
+          // Zoom control
+          chart.zoomControl = new am4maps.ZoomControl();
+
+          var homeButton = new am4core.Button();
+          homeButton.events.on("hit", function () {
+            chart.goHome();
+          });
+
+          homeButton.icon = new am4core.Sprite();
+          homeButton.padding(7, 5, 7, 5);
+          homeButton.width = 30;
+          homeButton.icon.path = "M16,8 L14,8 L14,16 L10,16 L10,10 L6,10 L6,16 L2,16 L2,8 L0,8 L8,0 L16,8 Z M16,8";
+          homeButton.marginBottom = 10;
+          homeButton.parent = chart.zoomControl;
+          homeButton.insertBefore(chart.zoomControl.plusButton);
+
+          // Center on the groups by default
+          chart.homeZoomLevel = 0;
+          // chart.homeGeoPoint = { longitude: 10, latitude: 52 };
+
+          var groupData = [
+            {
+              "name": "Countries",
+              "color": chart.colors.getIndex(0),
+              "data": db_Country
+            }
+          ];
+
+          // This array will be populated with country IDs to exclude from the world series
+          var excludedCountries = ["AQ"];
+
+          // Create a series for each group, and populate the above array
+          groupData.forEach(function (group) {
+            var series = chart.series.push(new am4maps.MapPolygonSeries());
+            series.name = group.name;
+            series.useGeodata = true;
+            var includedCountries = [];
+            group.data.forEach(function (country) {
+              includedCountries.push(country.id);
+              excludedCountries.push(country.id);
+            });
+            series.include = includedCountries;
+
+            series.fill = am4core.color(group.color);
+
+            // By creating a hover state and setting setStateOnChildren to true, when we
+            // hover over the series itself, it will trigger the hover SpriteState of all
+            // its countries (provided those countries have a hover SpriteState, too!).
+            series.setStateOnChildren = true;
+            series.calculateVisualCenter = true;
+
+            // Country shape properties & behaviors
+            var mapPolygonTemplate = series.mapPolygons.template;
+            // Instead of our custom title, we could also use {name} which comes from geodata  
+            mapPolygonTemplate.fill = am4core.color(group.color);
+            mapPolygonTemplate.fillOpacity = 0.8;
+            mapPolygonTemplate.nonScalingStroke = true;
+            mapPolygonTemplate.tooltipPosition = "fixed"
+
+            mapPolygonTemplate.events.on("over", function (event) {
+              series.mapPolygons.each(function (mapPolygon) {
+                mapPolygon.isHover = true;
+              })
+              event.target.isHover = false;
+              event.target.isHover = true;
+            })
+
+            mapPolygonTemplate.events.on("out", function (event) {
+              series.mapPolygons.each(function (mapPolygon) {
+                mapPolygon.isHover = false;
+              })
+            })
+
+            // States  
+            var hoverState = mapPolygonTemplate.states.create("hover");
+            hoverState.properties.fill = am4core.color("#CC0000");
+
+            // Tooltip
+            mapPolygonTemplate.tooltipText = "{title} Data: {customData}"; // enables tooltip
+            // series.tooltip.getFillFromObject = false; // prevents default colorization, which would make all tooltips red on hover
+            // series.tooltip.background.fill = am4core.color(group.color);
+
+            // MapPolygonSeries will mutate the data assigned to it, 
+            // we make and provide a copy of the original data array to leave it untouched.
+            // (This method of copying works only for simple objects, e.g. it will not work
+            //  as predictably for deep copying custom Classes.)
+            series.data = JSON.parse(JSON.stringify(group.data));
+          });
+
+          // The rest of the world.
+          var worldSeries = chart.series.push(new am4maps.MapPolygonSeries());
+          var worldSeriesName = "world";
+          worldSeries.name = worldSeriesName;
+          worldSeries.useGeodata = true;
+          worldSeries.exclude = excludedCountries;
+          worldSeries.fillOpacity = 0.8;
+          worldSeries.hiddenInLegend = true;
+          worldSeries.mapPolygons.template.nonScalingStroke = true;
+
+          // This auto-generates a legend according to each series' name and fill
+          chart.legend = new am4maps.Legend();
+
+          // Legend styles
+          chart.legend.paddingLeft = 27;
+          chart.legend.paddingRight = 27;
+          chart.legend.marginBottom = 15;
+          chart.legend.width = am4core.percent(90);
+          chart.legend.valign = "bottom";
+          chart.legend.contentAlign = "left";
+
+          // Legend items
+          chart.legend.itemContainers.template.interactionsEnabled = false;
+        })
+        .catch(error => {
+          console.error('Error:', error);
+        });
+
+      //FETCH RSS DATA
+      fetch(`https://api.allorigins.win/get?url=${encodeURIComponent('https://app.peakmetrics.com/alert/listenph1/79259/rss')}`)
+        .then(response => {
+          if (response.ok) return response.json(); // Parse the JSON response
+          throw new Error('Network response was not ok.');
+        })
+        .then(data => {
+          // Parse the contents as XML
+          var parser = new DOMParser();
+          var xmlDoc = parser.parseFromString(data.contents, 'application/xml');
+          var items = xmlDoc.querySelectorAll('item');
+          var RSSTitleCount = [];
+          var RSSDescriptionCount = [];
+          var RSSLinks = [];
+          var keywordCounts2 = {}; //Domain Type
+
+          items.forEach(item => {
+            var title = item.querySelector('title').textContent.toLowerCase().replace(/(<([^>]+)>)/ig, '');
+            var description = item.querySelector('description').textContent.toLowerCase().replace(/(<([^>]+)>)/ig, '');
+            var link = item.querySelector('link').textContent;
+            var links = item.querySelectorAll('link');
+
+            // Check if any of the keywords are present in the title or description
+            keywords1.forEach(keyword => {
+              if (title.includes(keyword) || description.includes(keyword)) {
+                if (keywordCounts1[keyword]) {
+                  keywordCounts1[keyword]++;
+                } else {
+                  keywordCounts1[keyword] = 1;
+                }
+              }
+            });
+
+            links.forEach(link => {
+              // Extract domain from link
+              var domain = extractDomain(link.textContent.trim());
+
+              if (keywordCounts2[domain]) {
+                keywordCounts2[domain] += 1;
+              } else {
+                keywordCounts2[domain] = 1;
+              }
+            });
+
+            RSSTitleCount.push(title);
+            // Trim description to 250 characters
+            var trimmedDescription = description.substring(0, 250);
+            // Add "Continue Reading" link
+            var continueReadingLink = isBadComment(description) + ` <a href="${link}" target="_blank">Continue Reading</a>`; // Use 'link' variable here
+            // Concatenate trimmed description with "Continue Reading" link
+            var trimmedDescriptionWithLink = trimmedDescription + ' ' + continueReadingLink;
+            // Add the trimmed description with link to array
+            RSSDescriptionCount.push(trimmedDescriptionWithLink);
+
+            RSSLinks.push(link); // Push the link for each news item
+
+          });
+
+          // Convert keyword counts to legend data
+          var legendData1 = Object.keys(keywordCounts1).map(keyword => {
+            return { name: keyword, value: keywordCounts1[keyword] };
+          });
+
+          // Sort legend data by value in descending order
+          legendData1.sort((a, b) => b.value - a.value);
+
+          // Limit to top 10 items
+          legendData1 = legendData1.slice(0, 10);
+
+          // Populate legend for chart 1
+          var legendElement1 = $(".pieID.legend1");
+          legendData1.forEach(item => {
+            legendElement1.append(`<li><em>${item.name}</em><span>${item.value}</span></li>`);
+          });
+
+          console.log(legendData1);
+
+          // Create pie chart 1
+          createPie(".pieID.legend1", ".pieID.pie1", legendData1, colors);
+
+          //For Graph Link
+          var legendData2 = Object.keys(keywordCounts2).map(keyword => {
+            return { name: keyword, value: keywordCounts2[keyword] };
+          });
+
+          legendData2.sort((a, b) => b.value - a.value);
+
+          // Populate legend for chart 2
+          var legendElement2 = $(".pieID.legend2");
+          legendData2.forEach(item => {
+            legendElement2.append(`<li><em>${item.name}</em><span>${item.value}</span></li>`);
+          });
+
+          // Create pie chart 2
+          createPie(".pieID.legend2", ".pieID.pie2", legendData2, colors);
+
+          //For Overall
+          // Take only the first 8 items
+          var firstFiveCounts = RSSTitleCount.slice(0, 8);
+          var firstFiveDescriptions = RSSDescriptionCount.slice(0, 8);
+
+          // Create legend for news with a limit of 5 items
+          var legendlinks = RSSLinks.slice(0, 8).map((link, index) => { // Changed 'title' to 'link' in the map function parameter
+            return { name: firstFiveCounts[index], link: link }; // Use 'link' variable instead of 'LiveNewsLink'
+          });
+
+          legendlinks.sort((a, b) => b.value - a.value);
+
+          // Populate legend for news
+          var legendElementLiveNews = $(".pieID.alertph_dash");
+          firstFiveCounts.forEach((count, index) => {
+            var description = firstFiveDescriptions[index];
+            legendElementLiveNews.append(`<li><span><em>${count}</em><br><br>${description}</span></li>`);
+          });
+
+          // Populate legend for news
+          var legendElementlinks = $(".pieID.legendlinks");
+          legendlinks.forEach(item => {
+            legendElementlinks.append(`<li><span><em>${item.name}</em><br><br><a href="${item.link}" target="_blank">${item.link}</a></span></li>`); // Use 'item.link' for the link
+          });
+        });
+
+
+      orderType = 'DESC';
+
+      var followers = [
+        "Author",
+        "Author",
+        "Author",
+        "Author",
+        "Author",
+        "Author"
+      ];
+
+      for (var i = 0; i < followers.length; i++) {
+        var ul = document.getElementById('followers-list');
+        var li = document.createElement("li");
+        li.classList.add("follower-item"); // Add specific class
+        var a = document.createElement("a");
+        var img = document.createElement("img");
+        var str = document.createElement("strong");
+        var spn = document.createElement("span");
+        var em = document.createElement("em");
+        var user = followers[i].split('@');
+        var lett = followers[i].charAt(0);
+        li.setAttribute('data-index', i);
+        li.setAttribute('data-name', user[0]);
+        li.setAttribute('data-index', ('0' + i).slice(-2));
+        li.appendChild(a);
+        img.setAttribute('src', 'https://eu.ui-avatars.com/api/?background=random&name=' + lett + '&font-size=0.6');
+        a.appendChild(img);
+        str.appendChild(document.createTextNode(user[0]));
+        a.appendChild(str);
+        spn.appendChild(document.createTextNode('@' + user[1]));
+        a.appendChild(spn);
+        em.appendChild(document.createTextNode(100 - i));
+        a.appendChild(em);
+        a.setAttribute('href', 'https://google.com/' + user[1]);
+        a.setAttribute('target', '_blank');
+        ul.appendChild(li);
+      }
+
+      document.getElementById('order-by').addEventListener('click', function () {
+        if (this.innerText == 'NAME') {
+          this.innerText = 'DATE';
+          Array.from(document.querySelectorAll("ul > li.follower-item[data-index]"))
+            .sort(({ dataset: { index: a } }, { dataset: { index: b } }) => orderType == 'DESC' ? a.localeCompare(b) : b.localeCompare(a))
+            .forEach((item) => item.parentNode.appendChild(item));
+        } else {
+          this.innerText = 'NAME';
+          Array.from(document.querySelectorAll("ul > li.follower-item[data-name]"))
+            .sort(({ dataset: { name: a } }, { dataset: { name: b } }) => orderType == 'ASC' ? a.localeCompare(b) : b.localeCompare(a))
+            .forEach((item) => item.parentNode.appendChild(item));
+        }
+      });
+
+      document.getElementById('order-type').addEventListener('click', function () {
+        this.innerText == 'ASC' ? this.innerText = 'DESC' : this.innerText = 'ASC';
+        orderType == 'ASC' ? orderType = 'DESC' : orderType = 'ASC';
+        document.getElementById('order-by').click();
+        document.getElementById('order-by').click();
+      });
+    });
+    //Timer
+    document.addEventListener("DOMContentLoaded", function () {
+      function updateDateTime() {
+        // Get the current date
+        var currentDate = new Date();
+
+        // Subtract 30 days
+        currentDate.setDate(currentDate.getDate() - 30);
+
+        // Format the date
+        var options = { year: 'numeric', month: 'long', day: 'numeric', hour: 'numeric', minute: 'numeric', second: 'numeric' };
+
+        // Display the current date and date minus 30 days
+        document.getElementById('currentDateTime').innerHTML = new Date().toLocaleDateString('en-US', options);
+      }
+
+      // Update date and time every second
+      setInterval(updateDateTime, 1000);
+
+      // Initial call to update date and time
+      updateDateTime();
+    });
+
+
+  </script>
+  <style>
+    /* RESET RULES
+–––––––––––––––––––––––––––––––––––––––––––––––––– */
+    @import url("https://fonts.googleapis.com/css?family=Lato:400,700&display=swap");
+
+    #chartdiv1 {
+      width: 100%;
+      height: 100%;
+      border: 1px solid #ccc;
+      position: relative;
+    }
+
+    .pieID {
+      display: inline-block;
+      vertical-align: top;
+    }
+
+    .pieID>* {
+      height: 100%;
+      width: 100%;
+      position: relative;
+      margin: 0 30px 30px 0;
+    }
+
+    .pie2,
+    .pie1 {
+      width: 200px;
+      /* Set a fixed width */
+      /* Remove the height and margin properties */
+      /* height: 200px; */
+      /* margin: 0 30px 30px 0; */
+    }
+
+    .pie2::before,
+    .pie1::before {
+      content: "";
+      display: block;
+      position: absolute;
+      z-index: 1;
+      width: 100px;
+      height: 100px;
+      background: #EEE;
+      border-radius: 50%;
+      top: 68px;
+      left: 68px;
+    }
+
+    .pie2::after,
+    .pie1::after {
+      /* Adjust margin-top to position the after element */
+      margin-top: 10px;
+      /* Remove margin and set position to absolute */
+      /* margin: 220px auto; */
+      position: absolute;
+      left: 50%;
+      transform: translateX(-50%);
+    }
+
+    .slice {
+      position: absolute;
+      width: 200px;
+      height: 200px;
+      clip: rect(0px, 200px, 200px, 100px);
+      animation: bake-pie 1s;
+    }
+
+    .slice span {
+      display: block;
+      position: absolute;
+      top: 0;
+      left: 0;
+      background-color: black;
+      width: 200px;
+      height: 200px;
+      border-radius: 50%;
+      clip: rect(0px, 200px, 200px, 100px);
+    }
+
+
+    .section_inside {
+      margin: 10px;
+      flex: 1 1 200px;
+      /* Adjust width of sections */
+      padding: 20px;
+      transition: transform 0.3s ease-in-out, box-shadow 0.3s ease-in-out;
+      /* added transition */
+      height: 200px;
+    }
+
+
+    .alertph_dash li {
+      border: 1px solid #ccc;
+      /* Add border style */
+      padding: 10px;
+      /* Add padding for spacing */
+      margin-bottom: 10px;
+      /* Add margin to create gap between items */
+      border-radius: 8px;
+      /* Add border radius for rounded corners */
+      box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+      /* Add shadow for depth */
+      transition: box-shadow 0.3s ease;
+      /* Add transition for hover effect */
+    }
+
+    .legend2 li,
+    .legend1 li {
+      width: 100%;
+      height: auto;
+      margin-bottom: 10px;
+      /* Increased spacing between legend items */
+      padding: 10px;
+      /* Increased padding */
+      border-left: 3px solid #fff;
+      /* Thick left border */
+      display: flex;
+      align-items: center;
+    }
+
+    .legend2 li:hover,
+    .legend1 li:hover,
+    .alertph_dash li:hover {
+      box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+      /* Increase shadow on hover */
+    }
+
+    .legend2 em,
+    .legend1 em,
+    .alertph_dash em {
+      flex: 1;
+      /* Allow name to take up remaining space */
+      margin-right: 20px;
+      /* Add spacing between name and value */
+    }
+
+    .legend2 span,
+    .legend1 span,
+    .alertph_dash span {
+      word-wrap: break-word;
+      margin-right: 20px;
+      /* Prevent value from shrinking */
+    }
+
+
+    .alertph_dash {
+      list-style-type: none;
+      font-size: 13px;
+      padding: 10px;
+      border-radius: 8px;
+      height: 100%;
+      width: 100%;
+      overflow: auto
+    }
+
+    .legend2,
+    .legend1 {
+      list-style-type: none;
+      height: 500px;
+      width: 100%;
+      background: #FFF;
+      font-size: 13px;
+      box-shadow: 0px 0px 0 #DDD, 0px 0px 0 #BBB;
+      padding: 10px;
+      /* Add padding for spacing */
+      border-radius: 8px;
+    }
+
+    #currentDateTime {
+      text-align: center;
+      /* Ensure text inside is centered */
+    }
+
+    .order {
+      color: #fff;
+      text-align: center;
+      padding: 0 2.5vw;
+      text-transform: uppercase;
+      font-size: 0.75em;
+      position: relative;
+    }
+
+    .order:before {
+      content: "ORDER";
+      color: #000;
+      background: #3a3a3a;
+      padding: 0.4em 0.5em;
+      border-radius: 5px 0 0 5px;
+      margin-right: -1px;
+    }
+
+    .order span {
+      background: #5a5f73;
+      padding: 0.5em;
+      border-radius: 2px;
+      color: #fff;
+      display: inline-block;
+      text-align: left;
+      cursor: pointer;
+    }
+
+    .order span:hover {
+      color: #131417;
+      background: #ffffff;
+    }
+
+    #order-type {
+      border-radius: 2px;
+    }
+
+    ul {
+      padding: 1vw;
+      list-style: none;
+    }
+
+    li.follower-item {
+      display: inline-block;
+      width: 17.25vw;
+      background: #1e1f26;
+      margin: 1vw;
+      border-radius: 6px;
+      color: #e6e6e6;
+      overflow: hidden;
+      position: relative;
+      box-sizing: border-box;
+    }
+
+    li.follower-item a:after {
+      content: "···";
+      position: absolute;
+      right: 0.25em;
+      bottom: 0.25em;
+      width: 0.9em;
+      height: 0.4em;
+      transition: all 0.4s ease 0s;
+      color: #9b9dad;
+      font-size: 2em;
+      background: #1e1f26;
+      line-height: 0.25em;
+      border-radius: 3px;
+      text-align: center;
+    }
+
+    li.follower-item a:hover:after {
+      opacity: 0.95;
+      transition: all 0.4s ease 0s;
+    }
+
+    li.follower-item a {
+      float: left;
+      padding: 0.5em;
+      text-decoration: none;
+      color: #fff;
+      width: 100%;
+      box-sizing: border-box;
+      transition: all 0.4s ease 0s;
+    }
+
+    li.follower-item a:hover {
+      background: #444857;
+      transition: all 0.4s ease 0s;
+    }
+
+    li.follower-item a:hover span {
+      color: #fff;
+      transition: all 0.4s ease 0s;
+    }
+
+    li.follower-item a img {
+      width: 2.5em;
+      height: 2.5em;
+      float: left;
+      margin-right: 0.5em;
+      border-radius: 3px;
+    }
+
+    li.follower-item a:hover img {
+      opacity: 0.85;
+      transition: all 0.4s ease 0s;
+    }
+
+    li.follower-item a strong {
+      float: left;
+      width: calc(100% - 3em);
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      font-size: 1.125em;
+      line-height: 1.4em;
+    }
+
+    li.follower-item a span {
+      float: left;
+      width: calc(100% - 4em);
+      color: #76daff;
+      font-size: 0.75em;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    li.follower-item a em {
+      position: absolute;
+      right: 0.75em;
+      top: 0.4em;
+      font-style: normal;
+      font-size: 0.65em;
+      color: #131417;
+    }
+
+    .charts {
+      width: 100%;
+      height: 100%;
+      position: relative;
+      top: 0;
+      left: 0;
+      z-index: 10;
+      border: 1px solid #ccc;
+      /* Add border radius */
+      display: grid;
+      grid-template-columns: repeat(2, 4fr);
+      /* Three columns with equal width */
+      grid-gap: 0px;
+      /* Gap between grid items */
+      background-image: url('https://wallpapers.com/images/featured-full/white-grid-y1drey6ssm8x37sn.jpg');
+      grid-column: span 2;
+      /* Adjust grid-row to span one row */
+      grid-row: span 1;
+
+      padding: 10px;
+      /* Add padding for spacing */
+      margin-bottom: 10px;
+      /* Add margin to create gap between items */
+      border-radius: 8px;
+      /* Add border radius for rounded corners */
+      box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+      /* Add shadow for depth */
+      transition: box-shadow 0.3s ease;
+      /* Add transition for hover effect */
+    }
+
+    .chart__title {
+      display: flex;
+      /* Use flexbox */
+      justify-content: center;
+      /* Center horizontally */
+      align-items: center;
+      /* Center vertically */
+      margin: 0;
+      padding: 10px;
+      font-weight: bold;
+      /* Background color */
+      border-bottom: 1px solid #ccc;
+      background-color: white;
+      /* Border bottom */
+    }
+
+    .chart--horiz .chart__bar {
+      height: 50px;
+      /* Increase height */
+    }
+
+    .chart__bar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 0;
+      background: linear-gradient(to left, #4cb8c4, #3cd3ad);
+      border-top-right-radius: 4px;
+      border-bottom-right-radius: 4px;
+      opacity: 0;
+      animation: 1s anim-lightspeed-in ease forwards;
+      border: 1px solid #fff;
+      list-style: none;
+    }
+
+    .chart__label {
+      /* Adjust padding */
+      line-height: 20px;
+      color: white;
+      background-color: #4cb8c4;
+      /* Background color */
+      border: 1px solid #3cd3ad;
+      /* Border */
+      border-radius: 4px;
+      /* Border radius */
+      box-shadow: 2px 2px 5px rgba(0, 0, 0, 0.1);
+      /* Box shadow */
+    }
+
+    @keyframes anim-lightspeed-in {
+      0% {
+        transform: translateX(-200%);
+        opacity: 1;
+      }
+
+      100% {
+        transform: translateX(0);
+        opacity: 1;
+      }
+    }
+
+    .chart__bar:hover::after {
+      content: attr(data-percentage);
+      /* Show percentage as tooltip */
+      position: absolute;
+      top: 0;
+      left: 100%;
+      /* Position to the left of the bar */
+      padding: 5px;
+      background-color: rgba(0, 0, 0, 0.8);
+      color: white;
+      border-radius: 4px;
+      white-space: nowrap;
+    }
+
+    #chartdiv {
+      width: 100%;
+      height: 100%;
+      border: 1px solid #ccc;
+      position: auto;
+    }
+
+    #wordCloud {
+      width: 100%;
+      height: 100%;
+      border: 1px solid #ccc;
+      position: relative;
+    }
+
+    :root {
+      --page-header-bgColor: #242e42;
+      --page-header-bgColor-hover: #1d2636;
+      --page-header-txtColor: #dde9f8;
+      --page-header-headingColor: #7889a4;
+      --page-header-width: 220px;
+      --page-content-bgColor: #f0f1f6;
+      --page-content-txtColor: #171616;
+      --page-content-blockColor: #fff;
+      --white: #fff;
+      --black: #333;
+      --blue: #00b9eb;
+      --red: #ec1848;
+      --border-radius: 4px;
+      --box-shadow: 0 0 10px -2px rgba(0, 0, 0, 0.075);
+      --switch-bgLightModeColor: #87cefa;
+      --switch-sunColor: gold;
+      --switch-moonColor: #f4f4f4;
+      --switch-bgDarkModeColor: #1f1f27;
+    }
+
+    * {
+      padding: 0;
+      margin: 0;
+      box-sizing: border-box;
+    }
+
+    ul {
+      list-style: none;
+    }
+
+    a,
+    button {
+      color: inherit;
+    }
+
+    a {
+      text-decoration: none;
+    }
+
+    button {
+      background: none;
+      cursor: pointer;
+    }
+
+    [type="checkbox"] {
+      position: absolute;
+      left: -9999px;
+    }
+
+    label {
+      cursor: pointer;
+    }
+
+    button,
+    input {
+      border: none;
+    }
+
+    svg {
+      display: block;
+    }
+
+    body {
+      font: 16px/1.5 "Lato", sans-serif;
+      /* styles.css */
+      margin: 0;
+      padding: 0;
+      height: 100%;
+      /* styles.css */
+    }
+
+
+    /* HEADER STYLES
+–––––––––––––––––––––––––––––––––––––––––––––––––– */
+    .page-header {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      overflow: auto;
+      padding-top: 20px;
+      width: var(--page-header-width);
+      color: var(--page-header-txtColor);
+      background: var(--page-header-bgColor);
+    }
+
+    /*In case you prefer an absolutely positioned header that covers the full page height, add these styles*/
+    /*body {
+  position: relative;
+}
+
+.page-header {
+  position: absolute;
+  top: 0;
+  left: 0;
+  height: 100%;
+}*/
+
+    /*remove these styles*/
+    /*.page-header {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  overflow: auto;
+}*/
+
+    .page-header nav {
+      display: flex;
+      flex-direction: column;
+      min-height: 100%;
+    }
+
+    .page-header .logo {
+      display: block;
+      margin: 0 15px;
+    }
+
+    .page-header .logo svg {
+      max-width: 120px;
+      fill: var(--white);
+    }
+
+    .page-header .toggle-mob-menu {
+      display: none;
+      margin-left: 5px;
+      padding: 4px;
+      background: var(--page-content-blockColor);
+      border-radius: var(--border-radius);
+    }
+
+    .page-header .toggle-mob-menu svg {
+      fill: var(--black);
+      transition: transform 0.2s;
+    }
+
+    .page-header .admin-menu {
+      display: flex;
+      flex-direction: column;
+      flex-grow: 1;
+      margin-top: 35px;
+    }
+
+    .page-header .admin-menu li:nth-last-child(2) {
+      margin-bottom: 35px;
+    }
+
+    .page-header .admin-menu li:last-child {
+      margin-top: auto;
+      margin-bottom: 20px;
+    }
+
+    .page-header .admin-menu li>* {
+      width: 100%;
+      padding: 12px 15px;
+    }
+
+    .page-header .admin-menu .switcher {
+      display: inline-block;
+      width: auto;
+    }
+
+    .page-header .admin-menu .menu-heading h3 {
+      text-transform: uppercase;
+      letter-spacing: 0.15em;
+      font-size: 12px;
+      margin-top: 12px;
+      color: var(--page-header-headingColor);
+    }
+
+    .page-header .admin-menu svg {
+      width: 20px;
+      height: 20px;
+      fill: var(--page-header-txtColor);
+      margin-right: 10px;
+    }
+
+    .page-header .admin-menu a,
+    .page-header .admin-menu button {
+      display: flex;
+      align-items: center;
+      font-size: 0.9rem;
+    }
+
+    .page-header .admin-menu a:hover,
+    .page-header .admin-menu a:focus,
+    .page-header .admin-menu button:hover,
+    .page-header .admin-menu button:focus {
+      background: var(--page-header-bgColor-hover);
+      color: var(--blue);
+      outline: none;
+    }
+
+    .page-header .admin-menu a:hover svg,
+    .page-header .admin-menu a:focus svg,
+    .page-header .admin-menu button:hover svg,
+    .page-header .admin-menu button:focus svg {
+      fill: var(--blue);
+    }
+
+
+    /* PAGE CONTENT STYLES
+–––––––––––––––––––––––––––––––––––––––––––––––––– */
+    .page-content.active {
+      position: relative;
+      left: var(--page-header-width);
+      width: calc(100% - var(--page-header-width));
+      min-height: 100vh;
+      padding: 30px;
+      color: var(--page-content-txtColor);
+      background: var(--page-content-bgColor);
+      display: block;
+      overflow: auto;
+    }
+
+    .page-content {
+      display: none;
+    }
+
+
+
+    .page-content .grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      grid-gap: 30px;
+    }
+
+    .page-content .grid>article {
+      display: flex;
+      height: 300px;
+      background: var(--page-content-blockColor);
+      border-radius: var(--border-radius);
+      box-shadow: var(--box-shadow);
+      overflow: auto;
+    }
+
+    .page-content .grid>article:first-child {
+      grid-column: 1 / -1;
+    }
+
+
+    /* MQ RULES
+–––––––––––––––––––––––––––––––––––––––––––––––––– */
+    @media screen and (max-width: 767px) {
+
+      .page-header,
+      .page-content {
+        position: static;
+        width: 100%;
+      }
+
+      .page-header {
+        padding: 10px;
+      }
+
+      .page-header nav {
+        flex-direction: row;
+      }
+
+      .page-header .logo {
+        margin: 0;
+      }
+
+      .page-header .logo svg {
+        width: 83px;
+        height: 35px;
+      }
+
+      .page-header .toggle-mob-menu {
+        display: block;
+      }
+
+      .page-header .admin-menu {
+        position: absolute;
+        left: 98px;
+        top: 57px;
+        margin-top: 0;
+        z-index: 2;
+        border-radius: var(--border-radius);
+        background: var(--page-header-bgColor);
+        visibility: hidden;
+        opacity: 0;
+        transform: scale(0.95);
+        transition: all 0.2s;
+      }
+
+      .page-header .admin-menu li:nth-last-child(2) {
+        margin-bottom: 12px;
+      }
+
+      .page-header .admin-menu li:last-child button,
+      .search-and-user .admin-profile .greeting {
+        display: none;
+      }
+
+      .page-content {
+        min-height: 0;
+        padding: 10px;
+      }
+
+      .page-content .grid {
+        grid-gap: 10px;
+      }
+
+      .search-and-user form svg {
+        width: 18px;
+        height: 18px;
+      }
+
+      .search-and-user .admin-profile svg {
+        fill: var(--white);
+      }
+    }
+
+    @media screen and (max-width: 400px) {
+      .page-content .grid>article {
+        grid-column: 1 / -1;
+      }
+    }
+
+
+    /* BODY CLASSES
+–––––––––––––––––––––––––––––––––––––––––––––––––– */
+    .mob-menu-opened .toggle-mob-menu svg {
+      transform: rotate(180deg);
+    }
+
+    .mob-menu-opened .page-header .admin-menu {
+      transform: scale(1);
+      visibility: visible;
+      opacity: 1;
+    }
+
+    @media screen and (min-width: 768px) {
+      .collapsed .page-header {
+        width: 40px;
+      }
+
+      .collapsed .page-header .admin-menu li>* {
+        padding: 10px;
+      }
+
+      .collapsed .page-header .logo,
+      .collapsed .page-header .admin-menu span,
+      .collapsed .page-header .admin-menu .menu-heading {
+        display: none;
+      }
+
+      .collapsed .page-header .admin-menu svg {
+        margin-right: 0;
+      }
+
+      .collapsed .page-header .collapse-btn svg {
+        transform: rotate(180deg);
+      }
+
+      .collapsed .page-content {
+        left: 40px;
+        width: calc(100% - 40px);
+      }
+    }
+
+
+    /* SWITCH STYLES
+–––––––––––––––––––––––––––––––––––––––––––––––––– */
+    .switch label {
+      display: grid;
+      grid-template-columns: auto auto;
+      grid-column-gap: 10px;
+      align-items: center;
+      justify-content: flex-start;
+    }
+
+    .switch span:first-child {
+      position: relative;
+      width: 50px;
+      height: 26px;
+      border-radius: 15px;
+      box-shadow: inset 0 0 5px rgba(0, 0, 0, 0.4);
+      background: var(--switch-bgLightModeColor);
+      transition: all 0.3s;
+    }
+
+    .switch span:first-child::before,
+    .switch span:first-child::after {
+      content: "";
+      position: absolute;
+      border-radius: 50%;
+    }
+
+    .switch span:first-child::before {
+      top: 1px;
+      left: 1px;
+      width: 24px;
+      height: 24px;
+      background: var(--white);
+      z-index: 1;
+      transition: transform 0.3s;
+    }
+
+    .switch span:first-child::after {
+      top: 50%;
+      right: 8px;
+      width: 10px;
+      height: 10px;
+      transform: translateY(-50%);
+      background: var(--switch-sunColor);
+      box-shadow: 0 0 4px 2px #ffdb1a;
+    }
+
+    .switch [type="checkbox"]:checked+label span:first-child {
+      background: var(--switch-bgDarkModeColor);
+    }
+
+    .switch [type="checkbox"]:focus+label span:first-child {
+      box-shadow: 0 3px 5px rgba(255, 255, 255, 0.25);
+    }
+
+    .switch [type="checkbox"]:checked+label span:first-child::before {
+      transform: translateX(24px);
+    }
+
+    .switch [type="checkbox"]:checked+label span:first-child::after {
+      left: 12px;
+      width: 15px;
+      height: 15px;
+      background: transparent;
+      box-shadow: -2px -5px 0 var(--switch-moonColor);
+      transform: translateY(-50%) rotate(-72deg);
+    }
+
+
+    /* LIGHT MODE STYLES
+–––––––––––––––––––––––––––––––––––––––––––––––––– */
+    .light-mode {
+      --page-header-bgColor: #f1efec;
+      --page-header-bgColor-hover: #b9e4e0;
+      --page-header-txtColor: #2c303a;
+      --page-header-headingColor: #979595;
+      --page-content-bgColor: #fff;
+      --box-shadow: 0 0 10px -2px rgba(0, 0, 0, 0.25);
+    }
+
+    .light-mode .page-header .admin-menu a:hover,
+    .light-mode .page-header .admin-menu a:focus,
+    .light-mode .page-header .admin-menu button:hover,
+    .light-mode .page-header .admin-menu button:focus {
+      color: var(--black);
+    }
+
+    .light-mode .page-header .logo svg,
+    .light-mode .page-header .admin-menu a:hover svg,
+    .light-mode .page-header .admin-menu a:focus svg,
+    .light-mode .page-header .admin-menu button:hover svg,
+    .light-mode .page-header .admin-menu button:focus svg {
+      fill: var(--black);
+    }
+
+    .light-mode .switch [type="checkbox"]:focus+label span:first-child {
+      box-shadow: 0 3px 5px rgba(0, 0, 0, 0.25);
+    }
+
+    @media screen and (max-width: 767px) {
+      .light-mode .search-and-user .admin-profile svg {
+        fill: var(--black);
+      }
+    }
+
+
+    /* FOOTER
+–––––––––––––––––––––––––––––––––––––––––––––––––– */
+    .page-footer {
+      font-size: 1rem;
+      display: flex;
+      align-items: center;
+      justify-content: flex-end;
+      margin-top: 10px;
+    }
+
+    .page-footer a {
+      margin-left: 4px;
+    }
+  </style>
+</head>
+
+<body>
+  <h1>
+    <div id="currentDateTime"></div>
+  </h1>
+  <script>document.write(unescape('%3C%72%73%73%61%70%70%2D%74%69%63%6B%65%72%20%69%64%3D%22%5F%5A%75%58%42%6B%69%36%43%70%69%58%6E%79%61%79%76%22%3E%3C%2F%72%73%73%61%70%70%2D%74%69%63%6B%65%72%3E%3C%73%63%72%69%70%74%20%73%72%63%3D%22%68%74%74%70%73%3A%2F%2F%77%69%64%67%65%74%2E%72%73%73%2E%61%70%70%2F%76%31%2F%74%69%63%6B%65%72%2E%6A%73%22%20%74%79%70%65%3D%22%74%65%78%74%2F%6A%61%76%61%73%63%72%69%70%74%22%20%61%73%79%6E%63%3E%3C%2F%73%63%72%69%70%74%3E%0A'))</script>
+  <!-- partial:index.partial.html -->
+  <svg style="display:none;">
+    <symbol id="logo" viewBox="0 0 140 59">
+      <g>
+        <path
+          d="M6.8 57c0 .4-.1.7-.2.9-.1.2-.3.4-.4.5-.1.1-.4.199-.5.3-.2 0-.3.1-.5.1-.1 0-.3 0-.5-.1-.2 0-.4-.101-.5-.3-.2 0-.4-.2-.5-.4-.1-.2-.2-.5-.2-.9V44.7h-2c-.3 0-.6-.101-.8-.2-.2-.1-.3-.2-.5-.4s-.2-.3-.2-.4v-.4c0-.1 0-.2.1-.399 0-.2.1-.301.2-.4.1-.1.3-.3.5-.4.1 0 .4-.1.7-.1h2.1v-3.5c0-1 .1-1.9.3-2.7C4.1 35 4.5 34.3 5 33.7c.5-.6 1.1-1.1 1.9-1.4.8-.3 1.7-.5 2.7-.5.9 0 1.5.101 1.8.4.3.3.5.6.5 1.1 0 .3-.1.601-.3.9-.2.3-.6.4-1.2.4h-.6c-.6 0-1.1.101-1.5.301-.4.199-.7.5-.9.8C7.2 36 7 36.5 7 37c-.1.5-.1 1-.1 1.6V42h2.7c.3 0 .6.1.8.2.2.1.3.2.5.399.1.101.2.301.2.401 0 .2.1.3.1.4 0 .1 0 .3-.1.399 0 .2-.1.3-.2.4-.1.1-.3.3-.5.399-.2.101-.5.2-.8.2H6.8V57z" />
+        <path
+          d="M30.4 50.2c0 1.3-.2 2.5-.7 3.5-.5 1.1-1.1 2-1.9 2.8-.8.8-1.8 1.4-2.8 1.8-1.1.4-2.3.601-3.5.601-1.3 0-2.4-.2-3.5-.601-1.1-.399-2-1-2.8-1.8-.8-.8-1.4-1.7-1.9-2.8-.5-1.101-.7-2.2-.7-3.5s.2-2.4.7-3.5c.5-1.101 1.1-2 1.9-2.7.8-.8 1.7-1.4 2.8-1.8 1.1-.4 2.3-.601 3.5-.601 1.3 0 2.4.2 3.5.601 1.1.399 2 1 2.8 1.8.8.8 1.4 1.7 1.9 2.7.5 1.1.7 2.3.7 3.5zm-3.4 0c0-.8-.1-1.5-.4-2.3-.2-.7-.6-1.4-1.1-1.9s-1-1-1.7-1.3c-.7-.3-1.5-.5-2.4-.5s-1.7.2-2.4.5-1.3.8-1.7 1.3c-.5.5-.8 1.2-1.1 1.9-.2.699-.4 1.5-.4 2.3s.1 1.5.4 2.3c.2.7.6 1.4 1.1 1.9.5.6 1 1 1.7 1.3s1.5.5 2.4.5 1.7-.2 2.4-.5 1.3-.8 1.7-1.3c.5-.601.8-1.2 1.1-1.9.3-.7.4-1.5.4-2.3z" />
+        <path
+          d="M38.1 44.8h.1c.4-.899 1-1.7 1.9-2.3s1.8-.9 2.9-.9c.5 0 1 .101 1.3.301.4.199.6.6.6 1.1 0 .6-.2 1-.6 1.2-.4.2-.8.3-1.4.3h-.2c-1.3 0-2.4.5-3.2 1.4-.8.899-1.3 2.3-1.3 4.1v7c0 .4-.1.7-.2.9-.1.199-.3.399-.4.5-.2.1-.4.199-.5.3-.2 0-.3.1-.5.1-.1 0-.3 0-.5-.1-.2 0-.4-.101-.5-.3-.1-.2-.3-.301-.4-.5C35 57.7 35 57.4 35 57V43.5c0-.4.1-.7.2-.9.1-.199.3-.399.4-.5.2-.1.3-.199.5-.199s.3-.101.5-.101c.1 0 .3 0 .4.101.2 0 .3.1.5.199.2.101.3.301.4.5.1.2.2.5.2.9v1.3z" />
+        <path
+          d="M49.2 51.3c0 .7.2 1.4.5 2 .3.601.7 1.2 1.2 1.601.5.5 1.1.8 1.7 1.1s1.3.4 2 .4c1 0 1.8-.2 2.5-.5.7-.4 1.2-.801 1.8-1.2.2-.2.4-.3.6-.4.2-.301.3-.301.5-.301.4 0 .7.1 1 .4.3.199.4.6.4 1 0 .1 0 .3-.1.5s-.2.4-.4.7c-1.6 1.7-3.7 2.5-6.3 2.5-1.3 0-2.4-.199-3.5-.6s-2-1-2.8-1.8c-.8-.8-1.4-1.7-1.8-2.7-.4-1.1-.7-2.3-.7-3.6 0-1.301.2-2.5.6-3.5.4-1.101 1-2 1.8-2.801.8-.8 1.7-1.399 2.7-1.8 1-.399 2.2-.6 3.4-.6 2.1 0 3.8.6 5.2 1.8s2.3 2.9 2.6 5.2c0 .3.1.5.1.6v.5c0 1.101-.6 1.7-1.7 1.7H49.2V51.3zm9.9-2.5c0-.7-.1-1.3-.3-1.8-.2-.6-.5-1.1-.9-1.5s-.9-.7-1.4-1c-.6-.2-1.2-.4-2-.4-.7 0-1.4.101-2 .4-.6.2-1.2.6-1.6 1-.5.4-.8.9-1.1 1.5-.3.6-.5 1.2-.5 1.8h9.8z" />
+        <path
+          d="M77.9 55.1c.399-.3.8-.5 1.199-.5.4 0 .7.101 1 .4.2.3.4.6.4.9 0 .199 0 .5-.1.699a1.856 1.856 0 01-.599.701c-.7.5-1.399.9-2.3 1.2s-1.8.4-2.7.4c-1.3 0-2.5-.2-3.5-.601-1.1-.399-2-1-2.8-1.8s-1.4-1.7-1.8-2.7c-.4-1.1-.7-2.3-.7-3.6s.2-2.5.7-3.601c.4-1.1 1.1-2 1.8-2.8.8-.8 1.7-1.399 2.8-1.8 1.101-.4 2.2-.6 3.5-.6.9 0 1.7.1 2.601.399C78.2 42 79 42.4 79.6 43l.7.7c.101.2.2.5.2.7 0 .399-.1.8-.4 1-.3.3-.6.399-1 .399-.199 0-.399 0-.5-.1-.2-.099-.4-.199-.7-.499-.301-.3-.7-.5-1.2-.7s-1-.3-1.7-.3c-.9 0-1.6.2-2.3.5s-1.2.8-1.7 1.3-.8 1.2-1.1 1.9c-.2.699-.4 1.5-.4 2.3s.1 1.5.3 2.2c.2.699.6 1.3 1 1.899.5.5 1 1 1.7 1.3.7.301 1.4.5 2.3.5.7 0 1.3-.1 1.8-.3.4-.099.9-.299 1.3-.699z" />
+        <path
+          d="M94.6 56.2h-.1c-.6.899-1.4 1.6-2.3 2.1-.9.5-2 .7-3.3.7-.7 0-1.301-.1-2-.3-.7-.2-1.4-.5-1.9-.9-.6-.399-1.1-.899-1.4-1.6-.4-.7-.6-1.5-.6-2.4 0-1.3.3-2.2 1-3 .7-.7 1.6-1.3 2.7-1.7 1.1-.399 2.3-.6 3.7-.699 1.399-.101 2.8-.2 4.199-.2v-.5c0-1.2-.399-2.101-1.1-2.7s-1.7-.9-3-.9c-.7 0-1.4.101-2 .301-.6.199-1.3.5-1.9 1-.3.199-.699.3-1 .3-.3 0-.6-.101-.899-.4-.2-.2-.4-.6-.4-.899 0-.2.101-.5.2-.7s.3-.4.6-.601c.7-.5 1.601-1 2.5-1.3 1-.3 2-.5 3.2-.5s2.2.2 3.101.5c.899.3 1.6.8 2.199 1.4.601.6 1 1.3 1.301 2.1.3.8.399 1.601.399 2.5V56.9c0 .3-.1.6-.2.899-.1.201-.2.401-.4.501-.2.101-.3.2-.5.2s-.3.1-.4.1c-.1 0-.3 0-.399-.1-.2 0-.301-.1-.5-.2-.201-.1-.301-.3-.401-.5s-.2-.5-.2-.899v-.7h-.2zm-.9-5.5c-.8 0-1.7 0-2.5.1-.9.101-1.7.2-2.4.4s-1.3.5-1.8.9-.7 1-.7 1.7c0 .5.101.9.3 1.2.2.3.5.6.801.8.3.2.699.4 1.1.4.4.1.8.1 1.2.1 1.5 0 2.7-.5 3.5-1.399.8-.9 1.2-2.101 1.2-3.5v-.9h-.7v.199z" />
+        <path
+          d="M111.4 45.4c-.5-.5-1-.801-1.5-1-.5-.2-1.101-.301-1.601-.301-.399 0-.7 0-1.1.101-.4.1-.7.2-1 .399-.3.2-.5.4-.7.7s-.3.601-.3 1c0 .7.3 1.2.899 1.601.601.3 1.601.6 2.801.899.8.2 1.5.4 2.199.7.7.3 1.301.6 1.801 1s.899.8 1.199 1.4c.301.5.4 1.199.4 1.899 0 1-.2 1.8-.6 2.5-.4.7-.9 1.2-1.5 1.7-.601.4-1.301.7-2.101.9-.8.199-1.6.3-2.399.3-1 0-2-.2-2.9-.5-1-.3-1.8-.8-2.5-1.4-.3-.3-.5-.5-.6-.7-.098-.198-.098-.398-.098-.598 0-.4.101-.8.4-1 .3-.3.6-.4 1-.4.399 0 .8.2 1.2.5.5.5 1.1.801 1.699 1.101.601.3 1.2.399 1.9.399.4 0 .8 0 1.2-.1.399-.1.7-.2 1-.4.3-.199.6-.399.8-.699.2-.301.3-.7.3-1.2 0-.8-.399-1.3-1.1-1.7s-1.8-.7-3.2-1c-.6-.1-1.1-.3-1.7-.5-.6-.2-1.1-.5-1.6-.8s-.8-.8-1.101-1.3c-.3-.5-.399-1.2-.399-2 0-.9.2-1.601.5-2.301.401-.6.801-1.2 1.401-1.6.601-.4 1.2-.7 2-.9.7-.199 1.5-.3 2.301-.3.899 0 1.699.101 2.6.4.8.3 1.6.7 2.2 1.2.3.3.5.5.6.699.101.2.101.4.101.601 0 .399-.101.7-.4 1s-.6.399-1 .399c-.402-.199-.802-.399-1.102-.699z" />
+        <path
+          d="M126 58.4c-.6.3-1.3.399-2.1.399-1.601 0-2.801-.399-3.601-1.3s-1.2-2.2-1.2-3.9v-9H117.2c-.3 0-.601 0-.8-.1-.2-.1-.4-.2-.5-.3-.101-.101-.2-.3-.2-.4 0-.2-.101-.3-.101-.399 0-.101 0-.2.101-.4 0-.2.1-.3.2-.4.1-.1.3-.3.5-.399.199-.101.5-.2.8-.2h1.899v-3.2c0-.399.101-.7.2-.899.101-.2.3-.4.4-.601.2-.1.399-.2.5-.3.2 0 .3-.1.5-.1.1 0 .3 0 .5.1.2 0 .3.1.5.3.2.101.3.3.399.601.101.199.2.6.2.899V42h3.2c.3 0 .6.1.8.2.2.1.3.2.5.399.102.101.202.301.202.401 0 .2.1.3.1.4 0 .1 0 .3-.1.399 0 .2-.1.3-.2.4-.1.1-.3.3-.5.3-.2.1-.5.1-.8.1h-3.2V53.2c0 1 .2 1.7.5 2.1.4.4.8.601 1.4.601.2 0 .5 0 .7-.101.199-.1.399-.1.6-.1.4 0 .7.1.9.399.199.301.3.601.3.9s-.101.5-.2.7c0 .401-.2.601-.5.701z" />
+        <path
+          d="M133.2 44.8h.1c.4-.899 1-1.7 1.9-2.3.899-.6 1.8-.9 2.899-.9.5 0 1 .101 1.301.301.4.199.6.599.6 1.099 0 .6-.2 1-.6 1.2-.4.2-.801.3-1.4.3h-.2c-1.3 0-2.399.5-3.2 1.4-.8.899-1.3 2.3-1.3 4.1v7c0 .4-.1.7-.2.9-.1.199-.3.399-.399.5-.101.1-.4.199-.5.3-.2 0-.3.1-.5.1-.101 0-.3 0-.5-.1-.2 0-.4-.101-.5-.3-.2-.101-.3-.301-.4-.5-.1-.2-.2-.5-.2-.9V43.5c0-.4.101-.7.2-.9.101-.199.3-.399.4-.5.2-.1.3-.199.5-.199s.3-.101.5-.101c.1 0 .3 0 .399.101.2 0 .301.1.5.199.2.101.301.301.4.5.1.2.2.5.2.9v1.3z" />
+      </g>
+      <g>
+        <g>
+          <path fill="#08A6DF"
+            d="M70 32.9c-9.1 0-16.5-7.4-16.5-16.5 0-4.8 2.1-9.3 5.7-12.4.5-.4 1.2-.4 1.6.1.4.5.4 1.2-.1 1.6-3.1 2.7-4.9 6.6-4.9 10.7 0 7.8 6.4 14.2 14.2 14.2s14.2-6.4 14.2-14.2c0-7.8-6.4-14.1-14.2-14.1-1.9 0-3.7.4-5.4 1.1-.6.2-1.3 0-1.5-.6-.2-.6 0-1.3.6-1.5C65.7.4 67.8 0 70 0c9.1 0 16.5 7.4 16.5 16.5S79.1 32.9 70 32.9z" />
+        </g>
+        <g>
+          <path fill="#7C2A8A"
+            d="M70 28.4c-6.6 0-11.9-5.4-11.9-11.9 0-6.6 5.4-11.9 11.9-11.9 5 0 9.5 3.2 11.2 7.9.5 1.3.7 2.6.7 4 0 .6-.5 1.1-1.101 1.1-.6 0-1.1-.5-1.1-1.1 0-1.1-.2-2.2-.601-3.3-1.399-3.8-5-6.4-9.1-6.4-5.3 0-9.6 4.3-9.6 9.6s4.3 9.6 9.6 9.6c.6 0 1.1.5 1.1 1.1.002.8-.498 1.3-1.098 1.3z" />
+        </g>
+        <g>
+          <path fill="#EC1848"
+            d="M70 23.9c-4.1 0-7.4-3.3-7.4-7.4s3.3-7.4 7.4-7.4c.6 0 1.1.5 1.1 1.1 0 .6-.5 1.1-1.1 1.1-2.8 0-5.1 2.3-5.1 5.1s2.3 5.1 5.1 5.1 5.1-2.3 5.1-5.1c0-.6.5-1.1 1.101-1.1.6 0 1.1.5 1.1 1.1.099 4.2-3.201 7.5-7.301 7.5z" />
+        </g>
+      </g>
+    </symbol>
+    <symbol id="down" viewBox="0 0 16 16">
+      <polygon points="3.81 4.38 8 8.57 12.19 4.38 13.71 5.91 8 11.62 2.29 5.91 3.81 4.38" />
+    </symbol>
+    <symbol id="users" viewBox="0 0 16 16">
+      <path
+        d="M8,0a8,8,0,1,0,8,8A8,8,0,0,0,8,0ZM8,15a7,7,0,0,1-5.19-2.32,2.71,2.71,0,0,1,1.7-1,13.11,13.11,0,0,0,1.29-.28,2.32,2.32,0,0,0,.94-.34,1.17,1.17,0,0,0-.27-.7h0A3.61,3.61,0,0,1,5.15,7.49,3.18,3.18,0,0,1,8,4.07a3.18,3.18,0,0,1,2.86,3.42,3.6,3.6,0,0,1-1.32,2.88h0a1.13,1.13,0,0,0-.27.69,2.68,2.68,0,0,0,.93.31,10.81,10.81,0,0,0,1.28.23,2.63,2.63,0,0,1,1.78,1A7,7,0,0,1,8,15Z" />
+    </symbol>
+    <symbol id="collection" viewBox="0 0 16 16">
+      <rect width="7" height="7" />
+      <rect y="9" width="7" height="7" />
+      <rect x="9" width="7" height="7" />
+      <rect x="9" y="9" width="7" height="7" />
+    </symbol>
+    <symbol id="charts" viewBox="0 0 16 16">
+      <polygon
+        points="0.64 7.38 -0.02 6.63 2.55 4.38 4.57 5.93 9.25 0.78 12.97 4.37 15.37 2.31 16.02 3.07 12.94 5.72 9.29 2.21 4.69 7.29 2.59 5.67 0.64 7.38" />
+      <rect y="9" width="2" height="7" />
+      <rect x="12" y="8" width="2" height="8" />
+      <rect x="8" y="6" width="2" height="10" />
+      <rect x="4" y="11" width="2" height="5" />
+    </symbol>
+    <symbol id="comments" viewBox="0 0 16 16">
+      <path d="M0,16.13V2H15V13H5.24ZM1,3V14.37L5,12h9V3Z" />
+      <rect x="3" y="5" width="9" height="1" />
+      <rect x="3" y="7" width="7" height="1" />
+      <rect x="3" y="9" width="5" height="1" />
+    </symbol>
+    <symbol id="pages" viewBox="0 0 16 16">
+      <rect x="4" width="12" height="12" transform="translate(20 12) rotate(-180)" />
+      <polygon points="2 14 2 2 0 2 0 14 0 16 2 16 14 16 14 14 2 14" />
+    </symbol>
+    <symbol id="appearance" viewBox="0 0 16 16">
+      <path
+        d="M3,0V7A2,2,0,0,0,5,9H6v5a2,2,0,0,0,4,0V9h1a2,2,0,0,0,2-2V0Zm9,7a1,1,0,0,1-1,1H9v6a1,1,0,0,1-2,0V8H5A1,1,0,0,1,4,7V6h8ZM4,5V1H6V4H7V1H9V4h1V1h2V5Z" />
+    </symbol>
+    <symbol id="trends" viewBox="0 0 16 16">
+      <polygon
+        points="0.64 11.85 -0.02 11.1 2.55 8.85 4.57 10.4 9.25 5.25 12.97 8.84 15.37 6.79 16.02 7.54 12.94 10.2 9.29 6.68 4.69 11.76 2.59 10.14 0.64 11.85" />
+    </symbol>
+    <symbol id="settings" viewBox="0 0 16 16">
+      <rect x="9.78" y="5.34" width="1" height="7.97" />
+      <polygon points="7.79 6.07 10.28 1.75 12.77 6.07 7.79 6.07" />
+      <rect x="4.16" y="1.75" width="1" height="7.97" />
+      <polygon points="7.15 8.99 4.66 13.31 2.16 8.99 7.15 8.99" />
+      <rect x="1.28" width="1" height="4.97" />
+      <polygon points="3.28 4.53 1.78 7.13 0.28 4.53 3.28 4.53" />
+      <rect x="12.84" y="11.03" width="1" height="4.97" />
+      <polygon points="11.85 11.47 13.34 8.88 14.84 11.47 11.85 11.47" />
+    </symbol>
+    <symbol id="options" viewBox="0 0 16 16">
+      <path d="M8,11a3,3,0,1,1,3-3A3,3,0,0,1,8,11ZM8,6a2,2,0,1,0,2,2A2,2,0,0,0,8,6Z" />
+      <path
+        d="M8.5,16h-1A1.5,1.5,0,0,1,6,14.5v-.85a5.91,5.91,0,0,1-.58-.24l-.6.6A1.54,1.54,0,0,1,2.7,14L2,13.3a1.5,1.5,0,0,1,0-2.12l.6-.6A5.91,5.91,0,0,1,2.35,10H1.5A1.5,1.5,0,0,1,0,8.5v-1A1.5,1.5,0,0,1,1.5,6h.85a5.91,5.91,0,0,1,.24-.58L2,4.82A1.5,1.5,0,0,1,2,2.7L2.7,2A1.54,1.54,0,0,1,4.82,2l.6.6A5.91,5.91,0,0,1,6,2.35V1.5A1.5,1.5,0,0,1,7.5,0h1A1.5,1.5,0,0,1,10,1.5v.85a5.91,5.91,0,0,1,.58.24l.6-.6A1.54,1.54,0,0,1,13.3,2L14,2.7a1.5,1.5,0,0,1,0,2.12l-.6.6a5.91,5.91,0,0,1,.24.58h.85A1.5,1.5,0,0,1,16,7.5v1A1.5,1.5,0,0,1,14.5,10h-.85a5.91,5.91,0,0,1-.24.58l.6.6a1.5,1.5,0,0,1,0,2.12L13.3,14a1.54,1.54,0,0,1-2.12,0l-.6-.6a5.91,5.91,0,0,1-.58.24v.85A1.5,1.5,0,0,1,8.5,16ZM5.23,12.18l.33.18a4.94,4.94,0,0,0,1.07.44l.36.1V14.5a.5.5,0,0,0,.5.5h1a.5.5,0,0,0,.5-.5V12.91l.36-.1a4.94,4.94,0,0,0,1.07-.44l.33-.18,1.12,1.12a.51.51,0,0,0,.71,0l.71-.71a.5.5,0,0,0,0-.71l-1.12-1.12.18-.33a4.94,4.94,0,0,0,.44-1.07l.1-.36H14.5a.5.5,0,0,0,.5-.5v-1a.5.5,0,0,0-.5-.5H12.91l-.1-.36a4.94,4.94,0,0,0-.44-1.07l-.18-.33L13.3,4.11a.5.5,0,0,0,0-.71L12.6,2.7a.51.51,0,0,0-.71,0L10.77,3.82l-.33-.18a4.94,4.94,0,0,0-1.07-.44L9,3.09V1.5A.5.5,0,0,0,8.5,1h-1a.5.5,0,0,0-.5.5V3.09l-.36.1a4.94,4.94,0,0,0-1.07.44l-.33.18L4.11,2.7a.51.51,0,0,0-.71,0L2.7,3.4a.5.5,0,0,0,0,.71L3.82,5.23l-.18.33a4.94,4.94,0,0,0-.44,1.07L3.09,7H1.5a.5.5,0,0,0-.5.5v1a.5.5,0,0,0,.5.5H3.09l.1.36a4.94,4.94,0,0,0,.44,1.07l.18.33L2.7,11.89a.5.5,0,0,0,0,.71l.71.71a.51.51,0,0,0,.71,0Z" />
+    </symbol>
+    <symbol id="collapse" viewBox="0 0 16 16">
+      <polygon points="11.62 3.81 7.43 8 11.62 12.19 10.09 13.71 4.38 8 10.09 2.29 11.62 3.81" />
+    </symbol>
+    <symbol id="search" viewBox="0 0 16 16">
+      <path
+        d="M6.57,1A5.57,5.57,0,1,1,1,6.57,5.57,5.57,0,0,1,6.57,1m0-1a6.57,6.57,0,1,0,6.57,6.57A6.57,6.57,0,0,0,6.57,0Z" />
+      <rect x="11.84" y="9.87" width="2" height="5.93" transform="translate(-5.32 12.84) rotate(-45)" />
+    </symbol>
+  </svg>
+  <header class="page-header">
+    <nav>
+      <button class="toggle-mob-menu" aria-expanded="false" aria-label="open menu">
+        <svg width="20" height="20" aria-hidden="true">
+          <use xlink:href="#down"></use>
+        </svg>
+      </button>
+      <ul class="admin-menu">
+        <li class="menu-heading">
+          <h3>Panel</h3>
+        </li>
+        <li>
+          <a href="#" id="dashboard">
+            <svg>
+              <use xlink:href="#pages"></use>
+            </svg>
+            <span>Dashboard</span>
+          </a>
+        </li>
+        <li>
+          <a href="#0" id="chart">
+            <svg>
+              <use xlink:href="#charts"></use>
+            </svg>
+            <span>Charts</span>
+          </a>
+        </li>
+        <li>
+          <a href="#" id="social">
+            <svg>
+              <use xlink:href="#users"></use>
+            </svg>
+            <span>Social Media</span>
+          </a>
+        </li>
+        <li>
+          <a href="#0" id="trend">
+            <svg>
+              <use xlink:href="#trends"></use>
+            </svg>
+            <span>Trends</span>
+          </a>
+        </li>
+        <li>
+          <a href="#0" id="mention">
+            <svg>
+              <use xlink:href="#collection"></use>
+            </svg>
+            <span>Mention</span>
+          </a>
+        </li>
+        <li>
+          <a href="#0" id="comment">
+            <svg>
+              <use xlink:href="#comments"></use>
+            </svg>
+            <span>Comments</span>
+          </a>
+        </li>
+        <li>
+          <a href="#0" id="report">
+            <svg>
+              <use xlink:href="#appearance"></use>
+            </svg>
+            <span>Reports</span>
+          </a>
+        </li>
+        <li>
+          <div class="switch">
+            <input type="checkbox" id="mode" checked>
+            <label for="mode">
+              <span></span>
+              <span>Light</span>
+            </label>
+          </div>
+          <button class="collapse-btn" aria-expanded="true" aria-label="collapse menu">
+            <svg aria-hidden="true">
+              <use xlink:href="#collapse"></use>
+            </svg>
+            <span>Collapse</span>
+          </button>
+        </li>
+      </ul>
+    </nav>
+  </header>
+  <section class="page-content" id="main-container-dashboard">
+    <section class="grid">
+      <article>
+        <div id="chartdiv"></div>
+      </article>
+      <article>
+        <div id="chartdiv1"></div>
+      </article>
+      <article>
+        <div class="charts">
+          <div class="chart chart--positive">
+            <span class="chart__title">Positive</span>
+            <ul class="chart--horiz_positive">
+            </ul>
+          </div>
+          <div class="chart chart--Negative">
+            <span class="chart__title">Negative</span>
+            <ul class="chart--horiz_negative">
+            </ul>
+          </div>
+          <div class="chart chart--Uncertainty">
+            <span class="chart__title">Uncertainty</span>
+            <ul class="chart--horiz_uncertainty">
+            </ul>
+          </div>
+          <div class="chart chart--Litigious">
+            <span class="chart__title">Litigious</span>
+            <ul class="chart--horiz_litigious">
+            </ul>
+          </div>
+        </div>
+      </article>
+      <article>
+        <div id="wordCloud"></div>
+      </article>
+      <article>
+        <div id="pieID alertph_dash">
+          <ul class="pieID alertph_dash">
+          </ul>
+        </div>
+      </article>
+    </section>
+  </section>
+  <section class="page-content" id="main-container-charts">
+    <section class="grid">
+      <article>
+      </article>
+      <article>
+        <h1>Domain Source</h1>
+        <!--Domain-->
+        <ul class="pieID legend2">
+          <div class="section_inside">
+            <div class="pieID pie2">
+            </div>
+          </div>
+        </ul>
+      </article>
+      <article>
+        <h1>Most Keyword Used</h1>
+        <!--Domain-->
+        <ul class="pieID legend1">
+          <div class="section_inside">
+            <div class="pieID pie1">
+            </div>
+          </div>
+        </ul>
+      </article>
+    </section>
+  </section>
+  <section class="page-content" id="main-container-social">
+    <section class="grid">
+      <article></article>
+      <article>
+        <script>document.write(unescape('%3C%72%73%73%61%70%70%2D%69%6D%61%67%65%62%6F%61%72%64%20%69%64%3D%22%5F%5A%75%58%42%6B%69%36%43%70%69%58%6E%79%61%79%76%22%3E%3C%2F%72%73%73%61%70%70%2D%69%6D%61%67%65%62%6F%61%72%64%3E%3C%73%63%72%69%70%74%20%73%72%63%3D%22%68%74%74%70%73%3A%2F%2F%77%69%64%67%65%74%2E%72%73%73%2E%61%70%70%2F%76%31%2F%69%6D%61%67%65%62%6F%61%72%64%2E%6A%73%22%20%74%79%70%65%3D%22%74%65%78%74%2F%6A%61%76%61%73%63%72%69%70%74%22%20%61%73%79%6E%63%3E%3C%2F%73%63%72%69%70%74%3E'))</script>
+      </article>
+      <article>
+        <script>document.write(unescape('%3C%72%73%73%61%70%70%2D%77%61%6C%6C%20%69%64%3D%22%5F%5A%75%58%42%6B%69%36%43%70%69%58%6E%79%61%79%76%22%3E%3C%2F%72%73%73%61%70%70%2D%77%61%6C%6C%3E%3C%73%63%72%69%70%74%20%73%72%63%3D%22%68%74%74%70%73%3A%2F%2F%77%69%64%67%65%74%2E%72%73%73%2E%61%70%70%2F%76%31%2F%77%61%6C%6C%2E%6A%73%22%20%74%79%70%65%3D%22%74%65%78%74%2F%6A%61%76%61%73%63%72%69%70%74%22%20%61%73%79%6E%63%3E%3C%2F%73%63%72%69%70%74%3E'));</script>
+      </article>
+    </section>
+  </section>
+  <section class="page-content" id="main-container-trends">
+    <section class="grid">
+      <article></article>
+    </section>
+  </section>
+  <section class="page-content" id="main-container-mentions">
+    <section class="grid">
+      <article>
+        <div class="order">
+          <span id="order-type">DESC</span><span class="by">BY</span><span id="order-by">DATE</span><span
+            class="end">&#9660;</span>
+        </div>
+        <ul id="followers-list"></ul>
+        <div class="footer"></div>
+      </article>
+    </section>
+  </section>
+  <section class="page-content" id="main-container-comments">
+    <section class="grid">
+      <article></article>
+    </section>
+  </section>
+  <section class="page-content" id="main-container-reports">
+    <section class="grid">
+      <article></article>
+    </section>
+  </section>
+  <footer class="page-footer">
+    <span>Development</span>
+  </footer>
+</body>
+
+</html>
